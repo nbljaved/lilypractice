@@ -17,10 +17,14 @@ func (w *window) timelineX(pos float64, width int) float64 {
 	return timelineMargin + pos/w.end*(float64(width)-2*timelineMargin)
 }
 
+// timelineHeight fits the bar numbers, at text scale s.
+func timelineHeight(s float64) int { return int(math.Round(24 + 10*s)) }
+
 func (w *window) drawTimeline(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 	v := w.s.view()
 	h := float64(height)
-	mid := h/2 + 4
+	s := w.textScale()
+	mid := 11 + 10*s // below the bar numbers
 
 	cr.SetSourceRGB(0.08, 0.08, 0.10)
 	cr.Paint()
@@ -57,7 +61,7 @@ func (w *window) drawTimeline(_ *gtk.DrawingArea, cr *cairo.Context, width, heig
 	every := 1
 	for _, n := range []int{1, 2, 4, 5, 10, 20, 50} {
 		every = n
-		if float64(n)*(right-left)/float64(len(w.bars)) >= 28 {
+		if float64(n)*(right-left)/float64(len(w.bars)) >= 28*s {
 			break
 		}
 	}
@@ -67,7 +71,7 @@ func (w *window) drawTimeline(_ *gtk.DrawingArea, cr *cairo.Context, width, heig
 		cr.Rectangle(x, mid-6, 1, 12)
 		cr.Fill()
 		if b.Number%every == 0 || b.Number == w.bars[0].Number {
-			label(cr, strconv.Itoa(b.Number), x, 10, 9, rgb{0.6, 0.6, 0.66})
+			label(cr, strconv.Itoa(b.Number), x, 10*s, 9*s, rgb{0.6, 0.6, 0.66})
 		}
 	}
 

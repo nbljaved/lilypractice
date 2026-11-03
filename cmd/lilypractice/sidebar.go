@@ -69,9 +69,14 @@ func (w *window) buildSidebar(dir string) *gtk.Box {
 	sb.box.Append(scroll)
 
 	sb.box.SetVisible(!w.prefs.HideSidebar)
+	w.sidebarLeast()
 	w.checkFolder()
 	return sb.box
 }
+
+// sidebarLeast keeps the list from being squeezed to nothing when the
+// window is too narrow for everything, as with large text.
+func (w *window) sidebarLeast() { w.side.box.SetSizeRequest(int(120*w.textScale()), -1) }
 
 // checkFolder lists the folder again, every two seconds, and redoes the
 // rows if anything changed.

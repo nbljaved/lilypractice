@@ -39,7 +39,7 @@ type options struct {
 
 func main() {
 	var o options
-	flag.StringVar(&o.synth, "synth", "auto", `instrument: "auto" starts FluidSynth, "none" leaves the ports for you to connect, anything else is an ALSA client to connect to, e.g. "Pianoteq"`)
+	flag.StringVar(&o.synth, "synth", "auto", `instrument for the notes: "auto" is FluidSynth, "none" leaves score-out and keys-out for you to connect, anything else is an ALSA client to connect to, e.g. "Carla"; the metronome always sounds on FluidSynth`)
 	flag.StringVar(&o.audio, "audio", "pipewire", "FluidSynth's audio driver: pipewire, jack or alsa")
 	flag.StringVar(&o.in, "in", "", `MIDI keyboard to connect to keyboard-in, e.g. "SL88"`)
 	flag.StringVar(&o.name, "name", "lilypractice", "ALSA client name, to tell several lilypractices apart")
@@ -130,6 +130,7 @@ func run(arg string, o options) error {
 	set.KeyLow, set.KeyHigh = p.KeyLow, p.KeyHigh
 	set.CountIn = p.CountIn
 	set.IgnoreRepeats = p.IgnoreRepeats
+	set.PedalYourself = p.PedalYourself
 	click := clickSoundNamed(p.ClickSound)
 	set.ClickAccent, set.ClickBeat, set.ClickVolume = click.accent, click.beat, float64(p.ClickVolume)/100
 	// Nothing to practise until a score is loaded.

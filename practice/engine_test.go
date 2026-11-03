@@ -413,6 +413,48 @@ func TestPedalRestoredWhenStartingInside(t *testing.T) {
 	}
 }
 
+func TestPedalYourselfShowsTheScoresPedalWithoutPlayingIt(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Listen, Hand: Both, PedalYourself: true})
+	if !e.View().PedalMarks {
+		t.Fatal("features.ly marks the sustain pedal, but PedalMarks is false")
+	}
+	e.Start(0)
+	var down []bool // the score's pedal, a quarter after each mark
+	for _, at := range []time.Duration{whole / 8, whole / 2, whole * 3 / 2, whole * 2} {
+		for _, o := range run(e, at-whole/8+time.Millisecond, at) {
+			if o.Controller != 0 {
+				t.Errorf("sent %v at %v, want no pedals played", o.Out, o.at)
+			}
+		}
+		down = append(down, e.View().ScorePedal)
+	}
+	if want := []bool{false, true, true, false}; !slices.Equal(down, want) {
+		t.Errorf("score's pedal down %v, want %v", down, want)
+	}
+}
+
+func TestPedalYourselfMidwayLiftsAndRestoresThePedal(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Listen, Hand: Both})
+	e.Start(0)
+	run(e, 0, whole/2) // the pedal is down
+	isPedal := func(value int) func(Out) bool {
+		return func(o Out) bool { return o.Controller == SustainPedal && o.Value == value }
+	}
+	if out := e.SetPedalYourself(true); len(out) != 2 || !slices.ContainsFunc(out, isPedal(0)) {
+		t.Errorf("pedalling yourself sent %v, want the pedal up on both channels", out)
+	}
+	if !e.View().ScorePedal {
+		t.Error("the score's pedal is no longer shown down")
+	}
+	if out := e.Stop(); slices.ContainsFunc(out, func(o Out) bool { return o.Controller != 0 }) {
+		t.Errorf("stop sent %v, want your pedal left alone", out)
+	}
+	e.Start(0)
+	if out := e.SetPedalYourself(false); len(out) != 2 || !slices.ContainsFunc(out, isPedal(127)) {
+		t.Errorf("playing the marks again sent %v, want the pedal down on both channels", out)
+	}
+}
+
 func TestNotesOutsideYourKeyboardPlayThemselves(t *testing.T) {
 	// A keyboard from C4 to C5: the pickup D5 is out of reach, so the
 	// program plays it and waits only from G4 on.

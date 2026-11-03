@@ -112,7 +112,8 @@ func (w *window) switchLoop(on bool) {
 }
 
 // commandKeys keeps the MIDI command keys up to date with their file,
-// ~/.config/lilypractice/commands.json: it is read again when it changes.
+// $XDG_CONFIG_HOME/lilypractice/commands.json: it is read again when it
+// changes.
 type commandKeys struct {
 	path    string
 	modTime time.Time

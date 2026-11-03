@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 )
 
-// prefs are kept between sessions, in ~/.config/lilypractice/prefs.json.
+// prefs are kept between sessions, in $XDG_CONFIG_HOME/lilypractice/prefs.json
+// (~/.config/... if XDG_CONFIG_HOME isn't set).
 type prefs struct {
 	KeyLow, KeyHigh int // your keyboard's range
 	ComputerKeys    int // note of the z key
@@ -19,8 +20,10 @@ type prefs struct {
 	ClickSound      string // the metronome's: a name from clickSounds
 	ClickVolume     int    // the metronome's, in percent
 	IgnoreRepeats   bool   // play straight through, as written
+	PedalYourself   bool   // the score's pedal marks aren't played
 	HideSidebar     bool   // the list of scores
 	SidebarWidth    int    // pixels
+	TextSize        int    // of everything but the score and piano, in percent
 }
 
 // keyboard is a common keyboard size.
@@ -49,13 +52,14 @@ func prefsPath() string {
 func loadPrefs() prefs {
 	p := prefs{KeyLow: 21, KeyHigh: 108, ComputerKeys: 48, CountIn: 1, Zoom: 1.5, Columns: 1,
 		PianoHeight: 140, CursorStyle: "column", CursorColour: "Violet",
-		ClickSound: clickSounds[0].name, ClickVolume: 100, SidebarWidth: 240}
+		ClickSound: clickSounds[0].name, ClickVolume: 100, SidebarWidth: 240, TextSize: 100}
 	if b, err := os.ReadFile(prefsPath()); err == nil {
 		json.Unmarshal(b, &p)
 	}
 	p.ClickSound = clickSoundNamed(p.ClickSound).name
 	p.ClickVolume = min(max(p.ClickVolume, 10), 140)
 	p.SidebarWidth = min(max(p.SidebarWidth, 120), 600)
+	p.TextSize = min(max(p.TextSize, minTextSize), maxTextSize)
 	if p.KeyLow < 0 || p.KeyHigh > 127 || p.KeyHigh-p.KeyLow < 11 {
 		p.KeyLow, p.KeyHigh = 21, 108
 	}

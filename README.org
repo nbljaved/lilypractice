@@ -9,8 +9,7 @@ for you. Native (Go, GTK 4, librsvg, ALSA), for Guix.
 nearly all of it, as I asked for features and tried them out while learning
 the piano. It does what I need on my machines (Linux, with Guix), and it is
 tested (unit tests, end-to-end tests, 100 scores from Mutopia), but it is no
-maintained product: expect rough edges and no support, and read the code
-before you rely on it.
+maintained product.
 
 * What it does
 - Shows a score as LilyPond engraves it, page by page, with a cursor that
@@ -19,8 +18,10 @@ before you rely on it.
 - Opens any =.ly= file, and lists the others in its folder. Scores written
   for an older LilyPond (most of Mutopia's) are updated on a copy with
   =convert-ly=.
-- Three modes: /wait/ (the music waits for your notes), /play/ (it keeps
-  time and scores you: perfect, good, missed, wrong) and /listen/.
+- Three modes:
+  * /wait/ (the music waits for your notes),
+  * /play/ (it keeps time and scores you: perfect, good, missed, wrong) and
+  * /listen/
 - Practise the right hand, the left or both; the program plays the rest.
 - Tempo, loops of bars, a metronome with nine sounds, a count-in.
 - Follows the score's repeats (volta repeats, alternative endings, D.S.
@@ -31,7 +32,7 @@ before you rely on it.
   piano) or the mouse on the piano on screen. Keys of a MIDI keyboard can
   be commands (play, back a bar, faster...).
 - Sounds through FluidSynth, started for you, or any ALSA synth (Pianoteq,
-  a hardware module...).
+  a hardware module...); the metronome always through FluidSynth.
 
 * What it doesn't do
 - Read anything but LilyPond: no MusicXML, MIDI or PDF scores.
@@ -136,12 +137,19 @@ shaded on the score. The Loop button (F6) turns it on and off.
 sostenuto and una corda) are played with the music. Your own sustain pedal
 — a MIDI keyboard's, or *Shift* on the computer keyboard — keeps your notes
 ringing; the Pedal light in the transport bar shows when it is down.
+Below it, for a score that marks the sustain pedal, the Score light shows
+when the score's is down. To practise pedalling, turn off Settings → Play
+pedal marks (it stays off next time): the score's pedals are no longer
+played, and you follow the Score light with your own. (On an instrument
+that plays every channel on one piano, the score's pedal holds your notes
+too, and gets in the way of yours.)
 
 *Your keyboard*: in the settings, choose its size (88, 76, 61, 49, 37 or 25
 keys), or press /Detect/ and then its lowest and highest key. The piano
 shows those keys, and in wait and play mode, notes outside them are played
 for you. The size, the computer keys' octave, the count-in, and the view
-settings are kept in =~/.config/lilypractice/prefs.json=.
+settings are kept in =$XDG_CONFIG_HOME/lilypractice/prefs.json=
+(=~/.config/lilypractice/prefs.json= if =XDG_CONFIG_HOME= isn't set).
 
 * The window
 The header (a button for the list of scores, title, stats, keys,
@@ -162,7 +170,9 @@ bar (restart, play, bar, pedal, mode, hands, tempo, loop, metronome).
 - The view follows the music smoothly, pausing for a few seconds after you
   scroll. In the settings: one page or two side by side (F8), the cursor's
   style (a column over the staves, a line, the bar, or only the notes) and
-  colour, the piano's height and the zoom.
+  colour, the piano's height, the zoom, and the text size (of the list of
+  scores, the panels, menus and buttons, and the timeline; the piano's
+  letters grow with its height).
 
 The mouse:
 
@@ -286,23 +296,41 @@ lilypractice's computer keys (above); every command has one.
 lilypractice is an ALSA client (named =lilypractice=, or =-name NAME= to
 run several) with four ports, which also show in qpwgraph:
 
-| Port | Name        | What                                                     |
-|------+-------------+----------------------------------------------------------|
-|    0 | keyboard-in | your MIDI keyboard                                       |
+| Port | Name        | What                                                      |
+|------+-------------+-----------------------------------------------------------|
+|    0 | keyboard-in | your MIDI keyboard                                        |
 |    1 | score-out   | notes and pedals it plays from the score; channel = staff |
-|    2 | click-out   | metronome and count-in (channel 10, wood blocks)         |
+|    2 | click-out   | metronome and count-in (channel 10, wood blocks)          |
 |    3 | keys-out    | notes from the computer keyboard, so you hear them        |
 
 - =-synth auto= (default) starts FluidSynth with the FluidR3 soundfont and
   connects ports 1–3 to it. It stops when lilypractice stops. =-audio= picks
   FluidSynth's audio driver (=pipewire=, =jack=, =alsa=).
-- =-synth Pianoteq= (any ALSA client name) connects to that instead.
-- =-synth none= leaves the ports for you to wire, e.g. to Carla, Ardour or
-  SuperCollider.
+- =-synth CLIENT= connects ports 1 and 3 to another ALSA client instead,
+  given by name (the start of it will do) or as =client:port=.
+- =-synth none= leaves ports 1 and 3 for you to wire, e.g. to Carla, Ardour
+  or SuperCollider.
+
+The metronome and count-in (port 2) always sound on FluidSynth, started
+for them whatever =-synth= says: another instrument would play the wood
+blocks as its own notes, a piano as piano notes.
+
+To see the ALSA clients and their ports: =cat /proc/asound/seq/clients=,
+or =aconnect -l= (in =alsa-utils=).
 
 A MIDI keyboard should go straight to the instrument too, not through
 lilypractice, for the lowest latency; =-thru= passes keyboard-in on to
 keys-out for setups where it can't.
+
+** Pianoteq
+Pianoteq 9 has no port that other programs can connect to (its one port,
+=announcements=, only hears of clients coming and going), so
+=-synth Pianoteq= fails with "Operation not permitted". Pianoteq connects
+to the inputs you tick instead:
+1. Start lilypractice with =-synth none=.
+2. In Pianoteq's MIDI settings (Options → Devices), tick lilypractice's
+   score-out and keys-out, and your MIDI keyboard. Leave click-out: it is
+   on FluidSynth already.
 
 * Other commands
 - =out/bin/lpfetch [-n 100] [-per 3]= :: download keyboard pieces from Mutopia
@@ -357,3 +385,15 @@ picture by its id.
 | =cmd/=      | lilypractice and the helper commands                     |
 | =test/=     | end-to-end tests                                         |
 | =testdata/= | test pieces                                              |
+
+* Licence
+lilypractice is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version. See =LICENSE=.
+
+The GPL doesn't cover the scores from the Mutopia Project:
+=testdata/bach-invention-01.ly=, =testdata/fur-elise.ly= and those in
+=testdata/mutopia/= keep their own licences (public domain or Creative
+Commons), given in each score's header and in =testdata/mutopia/index.tsv=.
+The other test pieces in =testdata/= are part of lilypractice.

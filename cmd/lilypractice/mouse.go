@@ -278,7 +278,8 @@ func (w *window) drawHover(cr *cairo.Context) {
 	cr.SetSourceRGBA(0.35, 0.35, 0.45, 0.35)
 	cr.SetLineWidth(1)
 	cr.Stroke()
-	label(cr, fmt.Sprintf("bar %d", w.barAt(w.groupPos[g])), x, top-4, 11, rgb{0.45, 0.45, 0.55})
+	s := w.textScale()
+	label(cr, fmt.Sprintf("bar %d", w.barAt(w.groupPos[g])), x, top-4*s, 11*s, rgb{0.45, 0.45, 0.55})
 }
 
 // The timeline.

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"regexp"
+	"strconv"
+
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
@@ -54,6 +58,7 @@ button.round { border-radius: 9999px; min-width: 34px; min-height: 34px; padding
 	font-weight: bold;
 }
 .pedal-indicator.on { background: #6d28d9; border-color: #8b5cf6; color: white; }
+.pedal-indicator.score.on { background: rgba(109, 40, 217, 0.3); color: #ddd6fe; }
 .state { color: #a1a1aa; font-size: 11px; }
 
 .segmented button { padding: 4px 12px; }
@@ -88,9 +93,26 @@ button.menu-item { padding: 5px 12px; font-weight: normal; border-radius: 6px; }
 .wrong { color: #f87171; }
 `
 
-func applyStyle() {
-	gtk.SettingsGetDefault().SetObjectProperty("gtk-application-prefer-dark-theme", true)
-	provider := gtk.NewCSSProvider()
-	provider.LoadFromString(css)
-	gtk.StyleContextAddProviderForDisplay(gdk.DisplayGetDefault(), provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+// The text size, in percent of the usual.
+const minTextSize, maxTextSize = 70, 200
+
+var (
+	style    *gtk.CSSProvider
+	fontSize = regexp.MustCompile(`font-size: (\d+)px`)
+)
+
+// applyStyle loads the look, or loads it again, with its text at size
+// percent: the text that has a size of its own above, and all the rest
+// (panels and tooltips too) through the window's.
+func applyStyle(size int) {
+	if style == nil {
+		gtk.SettingsGetDefault().SetObjectProperty("gtk-application-prefer-dark-theme", true)
+		style = gtk.NewCSSProvider()
+		gtk.StyleContextAddProviderForDisplay(gdk.DisplayGetDefault(), style, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+	}
+	sized := fontSize.ReplaceAllStringFunc(css, func(s string) string {
+		px, _ := strconv.Atoi(fontSize.FindStringSubmatch(s)[1])
+		return fmt.Sprintf("font-size: %.1fpx", float64(px*size)/100)
+	})
+	style.LoadFromString(fmt.Sprintf("window, tooltip { font-size: %d%%; }\n", size) + sized)
 }

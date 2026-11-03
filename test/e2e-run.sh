@@ -49,9 +49,12 @@ quit() { # sets status to the program's exit status
 	status=$?
 }
 
+# The metronome is on FluidSynth even with -synth none, so every run
+# gives it -audio file: no sound, only fluidsynth.wav here.
+
 # 1. A simulated MIDI keyboard plays the right hand; the program waits for
 #    each note and plays the left hand.
-start midi -synth none
+start midi -synth none -audio file
 aseqdump -p "$client:1" >midi.sent 2>&1 &
 dump=$!
 xdotool sleep 1
@@ -62,11 +65,12 @@ kill $dump
 check "MIDI keyboard: left hand follows the right" "$(notes midi.sent 1)" "$left"
 # Pedal down, changed and up, on both staves' channels.
 check "MIDI keyboard: pedal marks are played" "$(grep -c "controller 64" midi.sent)" 8
+check "metronome: FluidSynth runs with -synth none" "$(pgrep -c -f "alsa_seq.id $client-")" 1
 quit
 check "MIDI keyboard: program exits cleanly" "$status" 0
 
 # 2. The same, played on the computer keyboard (bottom row: z=C ... m=B).
-start keys -synth none
+start keys -synth none -audio file
 aseqdump -p "$client:1,$client:3" >keys.sent 2>&1 &
 dump=$!
 xdotool sleep 1
@@ -103,7 +107,7 @@ zone() { # keys held together on channel 16, as hex note numbers
 	for n; do aseqsend -p "$client:0" "8F $n 00"; done
 	xdotool sleep 0.3
 }
-start commands -synth none -mode listen -thru
+start commands -synth none -audio file -mode listen -thru
 xdotool sleep 1
 aseqdump -p "$client:1,$client:3" >commands1.sent 2>&1 &
 dump=$!

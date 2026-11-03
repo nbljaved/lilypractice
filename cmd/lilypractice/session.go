@@ -390,56 +390,74 @@ func (s *session) runMIDIInput() {
 }
 
 // setUpPorts starts or finds the instrument, connects the outputs to it,
-// and connects the MIDI keyboard if one was named.
+// and connects the MIDI keyboard if one was named. The metronome and
+// count-in always sound on FluidSynth, whatever plays the notes: a piano
+// such as Pianoteq would play their wood blocks as piano notes.
 func (s *session) setUpPorts(o options) {
 	if o.in != "" {
 		if err := s.seq.ConnectFrom(s.keyboardIn, o.in); err != nil {
 			fmt.Fprintln(os.Stderr, "lilypractice:", err)
 		}
 	}
-	switch o.synth {
-	case "none":
-		s.setSynthStatus("none; connect the lilypractice ports yourself, e.g. in qpwgraph")
-		return
-	case "auto":
-		sf, err := synth.FindSoundfont()
-		if err != nil {
-			s.setSynthStatus(err.Error())
-			return
-		}
+	if o.synth == "auto" {
 		s.setSynthStatus("starting FluidSynth...")
-		// A name of its own, so that two lilypractices never share a synth.
-		fluid, err := synth.StartFluidSynth(sf, o.audio, fmt.Sprintf("%s-%d", s.name, os.Getpid()))
+		fluid, err := s.startFluidSynth(o.audio, s.scoreOut, s.clickOut, s.keysOut)
 		if err != nil {
-			s.setSynthStatus(err.Error())
-			return
+			fluid = err.Error()
 		}
-		s.statusMu.Lock()
-		s.fluid = fluid
-		s.statusMu.Unlock()
-		for i := 0; !slices.Contains(s.seq.Clients(), fluid.Client); i++ {
-			if fluid.Exited() || i == 50 {
-				s.setSynthStatus(fmt.Sprintf("FluidSynth did not start; try another -audio driver than %q", o.audio))
-				return
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		s.connectOutputs(fluid.Client, "FluidSynth with "+filepath.Base(sf))
-	default:
-		s.connectOutputs(o.synth, o.synth)
+		s.setSynthStatus(fluid)
+		return
 	}
+	notes := "none; connect score-out and keys-out yourself, e.g. in qpwgraph"
+	if o.synth != "none" {
+		notes = o.synth
+		if err := s.connectOutputs(o.synth, s.scoreOut, s.keysOut); err != nil {
+			notes = err.Error()
+		}
+	}
+	s.setSynthStatus(notes + "; metronome: starting FluidSynth...")
+	click, err := s.startFluidSynth(o.audio, s.clickOut)
+	if err != nil {
+		click = err.Error()
+	}
+	s.setSynthStatus(notes + "; metronome: " + click)
 }
 
-// connectOutputs connects our outputs to an ALSA client; described is how
-// the status shows it.
-func (s *session) connectOutputs(client, described string) {
-	for _, p := range []alsa.Port{s.scoreOut, s.clickOut, s.keysOut} {
+// startFluidSynth starts FluidSynth and connects these outputs to it. It
+// returns how the status shows it.
+func (s *session) startFluidSynth(audio string, outputs ...alsa.Port) (string, error) {
+	sf, err := synth.FindSoundfont()
+	if err != nil {
+		return "", err
+	}
+	// A name of its own, so that two lilypractices never share a synth.
+	fluid, err := synth.StartFluidSynth(sf, audio, fmt.Sprintf("%s-%d", s.name, os.Getpid()))
+	if err != nil {
+		return "", err
+	}
+	s.statusMu.Lock()
+	s.fluid = fluid
+	s.statusMu.Unlock()
+	for i := 0; !slices.Contains(s.seq.Clients(), fluid.Client); i++ {
+		if fluid.Exited() || i == 50 {
+			return "", fmt.Errorf("FluidSynth did not start; try another -audio driver than %q", audio)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err := s.connectOutputs(fluid.Client, outputs...); err != nil {
+		return "", err
+	}
+	return "FluidSynth with " + filepath.Base(sf), nil
+}
+
+// connectOutputs connects our outputs to an ALSA client.
+func (s *session) connectOutputs(client string, outputs ...alsa.Port) error {
+	for _, p := range outputs {
 		if err := s.seq.ConnectTo(p, client); err != nil {
-			s.setSynthStatus(err.Error())
-			return
+			return err
 		}
 	}
-	s.setSynthStatus(described)
+	return nil
 }
 
 func (s *session) setSynthStatus(status string) {

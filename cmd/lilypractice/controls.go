@@ -39,16 +39,20 @@ type controls struct {
 	clickVolume    *gtk.Label
 	layout         *gtk.DropDown
 	pianoHeight    *gtk.Label
+	textSize       *gtk.Label
 	cursorStyle    *gtk.DropDown
 	cursorColour   *gtk.DropDown
 	guide          *gtk.Switch
 	repeats        *gtk.Switch
+	pedalMarks     *gtk.Switch
 	anyOctave      *gtk.Switch
 	keysFrom       *gtk.Label
 	zoom           *gtk.Label
 	instrument     *gtk.Label
 	pedal          *gtk.Label
 	lastPedal      bool
+	scorePedal     *gtk.Label
+	lastScorePedal bool
 	keyboardSize   *gtk.DropDown
 	keyboardRange  *gtk.Label
 	detect         *gtk.Button
@@ -141,11 +145,20 @@ func (w *window) buildTransport() *gtk.CenterBox {
 	start.Append(restart)
 	start.Append(c.play)
 	start.Append(where)
+	// Your pedal, and below it the score's, if it marks one.
+	pedals := gtk.NewBox(gtk.OrientationVertical, 2)
+	pedals.SetVAlign(gtk.AlignCenter)
 	c.pedal = gtk.NewLabel("Pedal")
 	c.pedal.AddCSSClass("pedal-indicator")
-	c.pedal.SetVAlign(gtk.AlignCenter)
 	c.pedal.SetTooltipText("Your sustain pedal: a MIDI keyboard's, or hold Shift")
-	start.Append(c.pedal)
+	c.scorePedal = gtk.NewLabel("Score")
+	c.scorePedal.AddCSSClass("pedal-indicator")
+	c.scorePedal.AddCSSClass("score")
+	c.scorePedal.SetTooltipText("The score's sustain pedal: played for you, or for you to follow with Play pedal marks off (settings)")
+	c.scorePedal.SetVisible(false)
+	pedals.Append(c.pedal)
+	pedals.Append(c.scorePedal)
+	start.Append(pedals)
 	bar.SetStartWidget(start)
 
 	// Middle: mode and hands.
@@ -408,11 +421,14 @@ func (w *window) buildSettingsPanel() *gtk.Popover {
 	c.cursorColour = w.choice(colours, func(i int) { w.setCursor(w.prefs.CursorStyle, cursorColours[i].name) })
 	c.guide = w.toggle(w.setGuide)
 	c.repeats = w.toggle(w.setFollowRepeats)
+	c.pedalMarks = w.toggle(w.setPedalMarks)
 	c.anyOctave = w.toggle(w.setAnyOctave)
 	c.keysFrom = gtk.NewLabel("")
 	c.keysFrom.SetWidthChars(4)
 	c.zoom = gtk.NewLabel("")
 	c.zoom.SetWidthChars(5)
+	c.textSize = gtk.NewLabel("")
+	c.textSize.SetWidthChars(5)
 	c.instrument = gtk.NewLabel("")
 	c.instrument.SetXAlign(0)
 	c.instrument.SetWrap(true)
@@ -431,6 +447,7 @@ func (w *window) buildSettingsPanel() *gtk.Popover {
 			func() { w.setCountIn(w.prefs.CountIn - 1) }, func() { w.setCountIn(w.prefs.CountIn + 1) })),
 		row("Guide", "In play mode, also hear your part, quietly", c.guide),
 		row("Follow repeats", "Go back at repeat signs and take the endings in turn, and D.S. al Fine; loops play their bars as written", c.repeats),
+		row("Play pedal marks", "The score's pedals; off to pedal yourself, following the Score light", c.pedalMarks),
 		row("Metronome sound", "Also for the count-in; F3 turns it on", c.clickSound),
 		row("Metronome volume", "", w.stepper(c.clickVolume, "Metronome volume",
 			func() { w.setClick(w.prefs.ClickSound, w.prefs.ClickVolume-10) },
@@ -450,6 +467,8 @@ func (w *window) buildSettingsPanel() *gtk.Popover {
 			func() { w.setPianoHeight(w.prefs.PianoHeight - 20) }, func() { w.setPianoHeight(w.prefs.PianoHeight + 20) })),
 		row("Zoom", "Ctrl + / Ctrl −", w.stepper(c.zoom, "Zoom",
 			func() { w.setZoom(w.zoom / 1.2) }, func() { w.setZoom(w.zoom * 1.2) })),
+		row("Text size", "Of the list of scores, panels, menus and buttons", w.stepper(c.textSize, "Text size",
+			func() { w.setTextSize(w.prefs.TextSize - 10) }, func() { w.setTextSize(w.prefs.TextSize + 10) })),
 		sectionTitle("Sound"),
 		c.instrument,
 		midi,
@@ -710,7 +729,7 @@ func (w *window) refresh(v practice.View, set practice.Settings) {
 		text(c.statCounts[i], fmt.Sprint(n))
 	}
 
-	for sw, on := range map[*gtk.Switch]bool{c.guide: set.Guide, c.anyOctave: set.AnyOctave, c.repeats: !set.IgnoreRepeats} {
+	for sw, on := range map[*gtk.Switch]bool{c.guide: set.Guide, c.anyOctave: set.AnyOctave, c.repeats: !set.IgnoreRepeats, c.pedalMarks: !set.PedalYourself} {
 		if sw.Active() != on {
 			sw.SetActive(on)
 		}
@@ -748,16 +767,24 @@ func (w *window) refresh(v practice.View, set practice.Settings) {
 	}
 	text(c.keysFrom, noteName(w.keyBase))
 	text(c.zoom, fmt.Sprintf("%.0f%%", w.zoom/1.5*100))
+	text(c.textSize, fmt.Sprintf("%d%%", w.prefs.TextSize))
 	text(c.instrument, "Instrument: "+w.s.instrument())
 
-	if pedal := w.s.pedalDown(); pedal != c.lastPedal {
-		if pedal {
-			c.pedal.AddCSSClass("on")
-		} else {
-			c.pedal.RemoveCSSClass("on")
+	light := func(l *gtk.Label, on bool, last *bool) {
+		if on != *last {
+			if on {
+				l.AddCSSClass("on")
+			} else {
+				l.RemoveCSSClass("on")
+			}
+			*last = on
 		}
-		c.lastPedal = pedal
 	}
+	light(c.pedal, w.s.pedalDown(), &c.lastPedal)
+	if c.scorePedal.Visible() != v.PedalMarks {
+		c.scorePedal.SetVisible(v.PedalMarks)
+	}
+	light(c.scorePedal, v.ScorePedal, &c.lastScorePedal)
 
 	low, high := w.prefs.KeyLow, w.prefs.KeyHigh
 	selected := uint(gtk.INVALID_LIST_POSITION)

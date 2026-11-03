@@ -106,7 +106,7 @@ type launch struct {
 }
 
 func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
-	applyStyle()
+	applyStyle(p.TextSize)
 	w := &window{s: s, prefs: p, recompile: start.recompile,
 		zoom: p.Zoom, keyBase: p.ComputerKeys, keysDown: make(map[uint]int),
 		hoverGroup: -1, pianoHover: -1, mouseKey: -1}
@@ -163,7 +163,7 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	})
 
 	w.timeline = gtk.NewDrawingArea()
-	w.timeline.SetContentHeight(34)
+	w.timeline.SetContentHeight(timelineHeight(w.textScale()))
 	w.timeline.SetDrawFunc(w.drawTimeline)
 	w.addTimelineGestures()
 	w.addTimelineMouse()
@@ -186,7 +186,10 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	w.split.SetShrinkEndChild(false)
 	w.split.SetPosition(p.SidebarWidth)
 	w.split.NotifyProperty("position", func() {
-		if pos := w.split.Position(); w.sidebarShown() && pos > 0 && pos != w.prefs.SidebarWidth {
+		// Not when the rest pushes the list back to make room, as larger
+		// text may: that isn't the width you chose.
+		limit, _ := w.split.ObjectProperty("max-position").(int)
+		if pos := w.split.Position(); w.sidebarShown() && pos > 0 && pos < limit && pos != w.prefs.SidebarWidth {
 			w.prefs.SidebarWidth = pos
 			w.prefsChanged = true
 		}
@@ -432,6 +435,14 @@ func (w *window) setFollowRepeats(on bool) {
 	w.prefs.IgnoreRepeats = !on
 	w.prefsChanged = true
 }
+
+// setPedalMarks plays the score's pedal marks, or leaves the pedalling to
+// you.
+func (w *window) setPedalMarks(on bool) {
+	w.do(func(time.Duration) []practice.Out { return w.s.eng.SetPedalYourself(!on) })
+	w.prefs.PedalYourself = !on
+	w.prefsChanged = true
+}
 func (w *window) setGuide(on bool)     { w.setting(w.s.eng.SetGuide)(on) }
 func (w *window) setAnyOctave(on bool) { w.setting(w.s.eng.SetAnyOctave)(on) }
 
@@ -477,6 +488,22 @@ func (w *window) setColumns(columns int) {
 	w.barAreaCache, w.systemBoxes = nil, nil
 	w.fitWidth()
 }
+
+// setTextSize sizes the text of everything but the score and the piano
+// (whose letters grow with it), in percent.
+func (w *window) setTextSize(size int) {
+	w.prefs.TextSize = min(max(size, minTextSize), maxTextSize)
+	w.prefsChanged = true
+	applyStyle(w.prefs.TextSize)
+	w.timeline.SetContentHeight(timelineHeight(w.textScale()))
+	w.sidebarLeast()
+	w.split.SetPosition(w.prefs.SidebarWidth) // back to it, if there's room again
+	w.dirty = true
+}
+
+// textScale is the text size as a factor, for the text the program draws
+// itself.
+func (w *window) textScale() float64 { return float64(w.prefs.TextSize) / 100 }
 
 func (w *window) setPianoHeight(height int) {
 	height = min(max(height, 60), 400)

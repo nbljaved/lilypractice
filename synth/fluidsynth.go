@@ -1,8 +1,8 @@
 // Package synth starts the default instrument: FluidSynth with a General
 // MIDI soundfont, listening on an ALSA sequencer port.
 //
-// Any other instrument works too (Pianoteq, a plugin in Carla or Ardour,
-// SuperCollider): connect lilypractice's ports to it instead.
+// Any other instrument can play the notes (Pianoteq, a plugin in Carla or
+// Ardour, SuperCollider); the metronome stays on FluidSynth.
 package synth
 
 import (

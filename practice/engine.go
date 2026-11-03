@@ -102,6 +102,9 @@ type Settings struct {
 	// blocks), and how loud (0: as normally, 1).
 	ClickAccent, ClickBeat int
 	ClickVolume            float64
+	// PedalYourself leaves the score's pedal marks unplayed, for you to
+	// pedal; View still shows where its sustain pedal is down.
+	PedalYourself bool
 }
 
 // Result is how a key you pressed was judged.
@@ -217,6 +220,7 @@ type Engine struct {
 	tempos    []tempo
 	bars      []Bar
 	pedals    []pedalMark
+	sustained bool  // the score marks the sustain pedal
 	channels  []int // MIDI channels the score plays on
 	end       float64
 	spans     []span // the order the music is played in, repeats followed
@@ -224,6 +228,7 @@ type Engine struct {
 	playing, waiting, finished bool
 	nextPedal                  int
 	pedalDown                  map[int]bool // controller -> down, as sent
+	scorePedal                 map[int]bool // controller -> down in the score here, sent or not
 	pos                        float64
 	last                       time.Duration
 	waitStart                  time.Duration
@@ -247,15 +252,16 @@ func New(s *score.Score, set Settings) *Engine {
 		set.Tempo = 1
 	}
 	e := &Engine{
-		set:       set,
-		staffHand: Hands(s.Staves),
-		noteStaff: make(map[string]int),
-		tiedOn:    make(map[string][]tied),
-		sounding:  make(map[sounding]string),
-		hit:       make(map[string]bool),
-		missed:    make(map[string]bool),
-		pedalDown: make(map[int]bool),
-		stats:     Stats{LastWrong: -1},
+		set:        set,
+		staffHand:  Hands(s.Staves),
+		noteStaff:  make(map[string]int),
+		tiedOn:     make(map[string][]tied),
+		sounding:   make(map[sounding]string),
+		hit:        make(map[string]bool),
+		missed:     make(map[string]bool),
+		pedalDown:  make(map[int]bool),
+		scorePedal: make(map[int]bool),
+		stats:      Stats{LastWrong: -1},
 	}
 
 	byID := make(map[string]score.Note, len(s.Notes))
@@ -314,6 +320,7 @@ func New(s *score.Score, set Settings) *Engine {
 	for _, p := range s.Pedals {
 		if cc, ok := controllers[p.Pedal]; ok {
 			e.pedals = append(e.pedals, pedalMark{position(p.At), cc, p.Down})
+			e.sustained = e.sustained || cc == SustainPedal
 		}
 	}
 	sort.SliceStable(e.pedals, func(i, j int) bool { return e.pedals[i].pos < e.pedals[j].pos })
@@ -336,18 +343,28 @@ func (e *Engine) pedalOut(cc int, down bool) []Out {
 	return out
 }
 
+// scorePedalTo moves one of the score's pedals, and plays it unless you
+// pedal yourself.
+func (e *Engine) scorePedalTo(cc int, down bool) []Out {
+	e.scorePedal[cc] = down
+	if e.set.PedalYourself || e.pedalDown[cc] == down {
+		return nil
+	}
+	return e.pedalOut(cc, down)
+}
+
 // placePedals readies the score's pedals for playing from pos: those
 // already down before pos are pressed now.
 func (e *Engine) placePedals(pos float64) []Out {
 	e.nextPedal = sort.Search(len(e.pedals), func(i int) bool { return e.pedals[i].pos >= pos-epsilon })
-	down := map[int]bool{}
+	clear(e.scorePedal)
 	for _, p := range e.pedals[:e.nextPedal] {
-		down[p.controller] = p.down
+		e.scorePedal[p.controller] = p.down
 	}
 	var out []Out
-	for cc, d := range down {
-		if d && !e.pedalDown[cc] {
-			out = append(out, e.pedalOut(cc, true)...)
+	for cc, d := range e.scorePedal {
+		if d {
+			out = append(out, e.scorePedalTo(cc, true)...)
 		}
 	}
 	return out
@@ -642,6 +659,27 @@ func (e *Engine) SetCountIn(bars int)  { e.set.CountIn = max(bars, 0) }
 func (e *Engine) SetAnyOctave(on bool) { e.set.AnyOctave = on }
 func (e *Engine) SetGuide(on bool)     { e.set.Guide = on }
 
+// SetPedalYourself stops or starts playing the score's pedal marks, also
+// while playing: the pedals they hold now come up, or go down.
+func (e *Engine) SetPedalYourself(on bool) []Out {
+	e.set.PedalYourself = on
+	var out []Out
+	if on {
+		for cc, down := range e.pedalDown {
+			if down {
+				out = append(out, e.pedalOut(cc, false)...)
+			}
+		}
+		return out
+	}
+	for cc, down := range e.scorePedal {
+		if down {
+			out = append(out, e.scorePedalTo(cc, true)...)
+		}
+	}
+	return out
+}
+
 // SetIgnoreRepeats plays straight through or follows the repeats, also
 // while playing; switched on midway, the first time through counts.
 func (e *Engine) SetIgnoreRepeats(on bool) {
@@ -805,7 +843,8 @@ func (e *Engine) Stop() []Out {
 	return out
 }
 
-// silence releases every note and pedal the program is holding.
+// silence releases every note and pedal the program is holding. The
+// score's pedals are up too, until the music goes on.
 func (e *Engine) silence() []Out {
 	var out []Out
 	for s := range e.sounding {
@@ -818,6 +857,7 @@ func (e *Engine) silence() []Out {
 			out = append(out, e.pedalOut(cc, false)...)
 		}
 	}
+	clear(e.scorePedal)
 	return out
 }
 
@@ -952,9 +992,7 @@ func (e *Engine) Advance(now time.Duration) []Out {
 		case evPedal:
 			p := e.pedals[e.nextPedal]
 			e.nextPedal++
-			if e.pedalDown[p.controller] != p.down {
-				out = append(out, e.pedalOut(p.controller, p.down)...)
-			}
+			out = append(out, e.scorePedalTo(p.controller, p.down)...)
 		case evCountIn:
 			out = append(out, e.playClick(e.countIn[0])...)
 			e.countIn = e.countIn[1:]
@@ -1234,6 +1272,9 @@ type View struct {
 	// Pass is the time through the repeat the music is in, from 1, while
 	// playing with repeats followed; otherwise 0.
 	Pass int
+	// The score marks the sustain pedal, and it is down here (whether
+	// played or, with PedalYourself, not).
+	PedalMarks, ScorePedal bool
 }
 
 func (e *Engine) View() View {
@@ -1245,6 +1286,8 @@ func (e *Engine) View() View {
 		Pos:        e.pos,
 		Stats:      e.stats,
 		QuarterBPM: e.speed() * 60 * 4,
+		PedalMarks: e.sustained,
+		ScorePedal: e.scorePedal[SustainPedal],
 	}
 	if e.playing && e.followingRepeats() && e.si < len(e.spans) {
 		v.Pass = e.spans[e.si].pass
