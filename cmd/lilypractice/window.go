@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -81,6 +82,8 @@ type window struct {
 	savedAt      time.Time
 	pianoPlaced  bool
 	drag         loopDrag
+	loopSet      bool // a loop was placed in this score
+	heldWas      map[int]heldKey
 	barAreaCache map[int][]rsvg.Rect
 	systemBoxes  map[int]*rsvg.Rect // nil: not on the page
 	commandKeys  commandKeys
@@ -203,7 +206,12 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 		w.tick()
 		return true
 	})
-	w.win.ConnectDestroy(w.stopLoading)
+	w.win.ConnectDestroy(func() {
+		w.stopLoading()
+		if w.prefsChanged {
+			w.prefs.save()
+		}
+	})
 	w.addSideButtons()
 	w.watchCommandKeys()
 	w.setTitle(filepath.Base(start.dir))
@@ -281,13 +289,19 @@ func (w *window) tick() {
 	if w.glide(dt) {
 		w.dirty = true
 	}
+	// Drawn again only when something changed: GTK then redraws the
+	// whole window, which costs.
 	if v.Playing || w.dirty || time.Since(w.wrongAt) < time.Second {
 		w.area.QueueDraw()
 		w.timeline.QueueDraw()
+		w.piano.QueueDraw()
 		w.syncScrollBars()
 		w.dirty = false
 	}
-	w.piano.QueueDraw() // cheap, and keys change at any time
+	if held := w.s.heldKeys(); !maps.Equal(held, w.heldWas) { // keys change at any time
+		w.heldWas = held
+		w.piano.QueueDraw()
+	}
 	if d := w.s.detected(); d.done {
 		w.setKeyboard(d.low, d.high)
 	}
@@ -330,16 +344,9 @@ func (w *window) togglePlay() {
 // restart goes back to the start, of the loop if there is one, and
 // clears the stats. While playing, the music goes on from there.
 func (w *window) restart() {
-	eng := w.s.eng
-	w.do(func(now time.Duration) []practice.Out {
-		playing := eng.View().Playing
-		out := eng.Stop()
+	w.seek(func(eng *practice.Engine) {
 		eng.Rewind()
 		eng.ResetStats()
-		if playing {
-			out = append(out, eng.Start(now)...)
-		}
-		return out
 	})
 	w.follow(w.s.view(), false)
 }
@@ -348,22 +355,25 @@ func (w *window) stop() {
 	w.do(func(time.Duration) []practice.Out { return w.s.eng.Stop() })
 }
 
-func (w *window) seekGroup(i int) {
-	w.do(func(time.Duration) []practice.Out {
-		w.s.eng.Seek(i)
-		return nil
-	})
+// stepNote moves n notes (struck together, a chord counts once) back or
+// forward.
+func (w *window) stepNote(n int) {
+	w.seek(func(eng *practice.Engine) { eng.Seek(eng.Next() + n) })
 	w.manualAt = time.Time{}
 	w.follow(w.s.view(), false)
 }
 
-// seekPos moves to a position; while playing, playback restarts there.
 func (w *window) seekPos(pos float64) {
+	w.seek(func(eng *practice.Engine) { eng.SeekPos(pos) })
+}
+
+// seek moves the music with move; while playing, playback restarts there.
+func (w *window) seek(move func(eng *practice.Engine)) {
 	eng := w.s.eng
 	w.do(func(now time.Duration) []practice.Out {
 		playing := eng.View().Playing
 		out := eng.Stop()
-		eng.SeekPos(pos)
+		move(eng)
 		if playing {
 			out = append(out, eng.Start(now)...)
 		}
@@ -400,6 +410,7 @@ func (w *window) changeTempo(by float64) {
 }
 
 func (w *window) setLoop(on bool, from, to int) {
+	w.loopSet = w.loopSet || on
 	w.do(func(now time.Duration) []practice.Out { return w.s.eng.SetLoop(now, on, from, to) })
 }
 
@@ -446,6 +457,7 @@ func (w *window) setKeyBase(base int) {
 	w.keyBase = min(max(base, 12), 96)
 	w.prefs.ComputerKeys = w.keyBase
 	w.prefsChanged = true
+	w.dirty = true
 }
 
 func (w *window) setZoom(zoom float64) {
@@ -625,9 +637,9 @@ func (w *window) keyPressed(keyval, keycode uint, state gdk.ModifierType) bool {
 	case gdk.KEY_Home:
 		w.restart()
 	case gdk.KEY_Left:
-		w.seekGroup(w.s.eng.Next() - 1)
+		w.stepNote(-1)
 	case gdk.KEY_Right:
-		w.seekGroup(w.s.eng.Next() + 1)
+		w.stepNote(1)
 	case gdk.KEY_Up:
 		w.changeTempo(0.05)
 	case gdk.KEY_Down:

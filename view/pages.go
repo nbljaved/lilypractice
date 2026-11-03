@@ -20,11 +20,9 @@ const Gap = 16
 type Color struct{ R, G, B float64 }
 
 var (
-	Blue   = Color{0.10, 0.35, 0.95}
-	Green  = Color{0.05, 0.60, 0.20}
-	Red    = Color{0.85, 0.10, 0.10}
-	Purple = Color{0.55, 0.30, 0.75}
-	Orange = Color{0.93, 0.45, 0.10}
+	Blue  = Color{0.10, 0.35, 0.95}
+	Green = Color{0.05, 0.60, 0.20}
+	Red   = Color{0.85, 0.10, 0.10}
 )
 
 type Pages struct {
@@ -93,8 +91,6 @@ func (p *Pages) Size() (w, h float64) {
 	}
 	return w, h
 }
-
-func (p *Pages) PageCount() int { return len(p.docs) }
 
 // PageSpan returns the top and height of page i, in page units.
 func (p *Pages) PageSpan(i int) (top, height float64) {
@@ -207,6 +203,11 @@ func (p *Pages) Draw(cr *cairo.Context, zoom float64, highlight map[string]Color
 		id = score.Head(id)
 		i, ok := p.notePage[id]
 		if !ok {
+			continue
+		}
+		// Only notes in view: drawing one looks it up in the page, which is slow.
+		if r, ok := p.NoteBox(id); !ok || r.X*zoom > clipRight || (r.X+r.W)*zoom < clipLeft ||
+			r.Y*zoom > clipBottom || (r.Y+r.H)*zoom < clipTop {
 			continue
 		}
 		cr.Save()

@@ -130,7 +130,6 @@ func Compile(ctx context.Context, lyPath, outDir string, force bool) (*Output, e
 	return out, os.WriteFile(stampPath, []byte(stamp), 0o644)
 }
 
-// collect finds the MIDI file and which page each note is on.
 // errorLines picks LilyPond's error messages out of its log.
 func errorLines(log string) []string {
 	var errs []string
@@ -156,6 +155,7 @@ func scoresOf(notes string) []string {
 	}
 }
 
+// collect finds the MIDI file and which page each note is on.
 func collect(out *Output, stem string) (*Output, error) {
 	if len(out.Pages) == 0 {
 		return out, fmt.Errorf("no SVG pages for %s", stem)
@@ -185,25 +185,28 @@ func collect(out *Output, stem string) (*Output, error) {
 	return out, nil
 }
 
-var pageNumber = regexp.MustCompile(`-(\d+)\.svg$`)
+var pageNumber = regexp.MustCompile(`^-(\d+)\.svg$`)
 
 // pagesOf returns stem.svg, or stem-1.svg, stem-2.svg, ... for several pages.
 func pagesOf(stem string) []string {
 	if _, err := os.Stat(stem + ".svg"); err == nil {
 		return []string{stem + ".svg"}
 	}
-	matches, _ := filepath.Glob(stem + "-*.svg")
+	// Listed, not globbed: the name may hold a [ or a *.
+	entries, _ := os.ReadDir(filepath.Dir(stem))
 	var pages []string
-	for _, m := range matches {
-		if pageNumber.MatchString(strings.TrimPrefix(m, stem)) {
-			pages = append(pages, m)
+	number := map[string]int{}
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Name(), filepath.Base(stem))
+		m := pageNumber.FindStringSubmatch(rest)
+		if !ok || m == nil {
+			continue
 		}
+		p := filepath.Join(filepath.Dir(stem), e.Name())
+		number[p], _ = strconv.Atoi(m[1])
+		pages = append(pages, p)
 	}
-	number := func(p string) int {
-		n, _ := strconv.Atoi(pageNumber.FindStringSubmatch(p)[1])
-		return n
-	}
-	sort.Slice(pages, func(i, j int) bool { return number(pages[i]) < number(pages[j]) })
+	sort.Slice(pages, func(i, j int) bool { return number[pages[i]] < number[pages[j]] })
 	return pages
 }
 

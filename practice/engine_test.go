@@ -1,6 +1,7 @@
 package practice
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"math"
@@ -10,24 +11,30 @@ import (
 	"testing"
 	"time"
 
+	"lilypractice/lilypond"
 	"lilypractice/score"
 )
 
-// The tests use the JSON that lpcheck writes for testdata/features.ly:
-// 3/4 at ♩=90 (22.5 whole notes a minute), a pickup D5, then
-// bar 1: G4 A4 B4 C5 (eighths) D5 over a left-hand G3+B3 chord.
-func loadFeatures(t *testing.T) *score.Score {
+// load engraves testdata/name.ly and reads its notes. LilyPond's output is
+// kept in the temporary folder, and engraved again when anything changes.
+func load(t *testing.T, name string) *score.Score {
 	t.Helper()
-	path := filepath.Join("..", "out", "features", "features.notes.json")
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("run `out/bin/lpcheck testdata/features.ly` first to compile the test piece")
+	out, err := lilypond.Compile(context.Background(), filepath.Join("..", "testdata", name+".ly"),
+		filepath.Join(os.TempDir(), "lilypractice-test", name), false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	s, err := score.Load(path)
+	s, err := score.Load(out.Scores[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
+
+// Most tests use testdata/features.ly:
+// 3/4 at ♩=90 (22.5 whole notes a minute), a pickup D5, then
+// bar 1: G4 A4 B4 C5 (eighths) D5 over a left-hand G3+B3 chord.
+func loadFeatures(t *testing.T) *score.Score { return load(t, "features") }
 
 type sent struct {
 	at time.Duration
@@ -352,14 +359,7 @@ func TestLoopRepeatsBars(t *testing.T) {
 func TestStartsAtTheBarLine(t *testing.T) {
 	// Bach's first right-hand note comes after a 16th rest: the music must
 	// start at the bar line, so the first note comes a 16th after it.
-	path := filepath.Join("..", "out", "bach-invention-01", "bach-invention-01.notes.json")
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("run `out/bin/lpcheck testdata/bach-invention-01.ly` first")
-	}
-	s, err := score.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := load(t, "bach-invention-01")
 	e := New(s, Settings{Mode: Listen, Hand: Both})
 	e.Start(0)
 	ons := noteOns(run(e, 0, time.Second), ScoreOut)
@@ -464,18 +464,7 @@ func TestPlayableHands(t *testing.T) {
 
 // testdata/repeats.ly: c | repeat 2 { d e } alternatives { f } { g } | a |
 // repeat 3 { b } | c | segno: d (Fine the second time) e, D.S. al Fine.
-func loadRepeats(t *testing.T) *score.Score {
-	t.Helper()
-	path := filepath.Join("..", "out", "repeats", "repeats.notes.json")
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("run `out/bin/lpcheck testdata/repeats.ly` first to compile the test piece")
-	}
-	s, err := score.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
+func loadRepeats(t *testing.T) *score.Score { return load(t, "repeats") }
 
 func listenPitches(e *Engine) []int {
 	e.Start(0)
@@ -570,6 +559,9 @@ func TestHands(t *testing.T) {
 		{"no names", []score.Named{named(0, "", ""), named(1, "", ""), named(2, "", "")},
 			map[int]Hand{0: Right, 1: Left}},
 		{"one staff", []score.Named{named(0, "", "")}, map[int]Hand{0: Right}},
+		{"one staff, for the left hand", []score.Named{named(0, "lh", "")}, map[int]Hand{0: Left}},
+		{"only one staff named for a hand", []score.Named{named(0, "melody", ""), named(1, "bass", "")},
+			map[int]Hand{0: Right, 1: Left}},
 	} {
 		if got := Hands(c.staves); !maps.Equal(got, c.want) {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
@@ -617,5 +609,54 @@ func TestNothingToPlay(t *testing.T) {
 	e.View()
 	if e.Playable(Right) || len(e.Bars()) != 1 {
 		t.Errorf("an empty score: playable %v, bars %v", e.Playable(Right), e.Bars())
+	}
+}
+
+func TestCountInThenWait(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Wait, Hand: Right, CountIn: 1})
+	e.Start(0)
+	run(e, 0, 500*time.Millisecond)
+	// Feeling for the first note during the count-in is no mistake.
+	if _, r := e.NoteOn(500*time.Millisecond, 74, MIDIKeyboard); r != Ignored {
+		t.Errorf("D5 during the count-in: %v, want ignored", r)
+	}
+	run(e, 501*time.Millisecond, 3*whole/4+100*time.Millisecond) // one bar of 3/4
+	if v := e.View(); !v.Waiting || v.CountingIn {
+		t.Errorf("after the count-in: waiting %v, counting in %v; want waiting only", v.Waiting, v.CountingIn)
+	}
+	if _, r := e.NoteOn(3*whole/4+100*time.Millisecond, 74, MIDIKeyboard); r != Good {
+		t.Errorf("D5 after the count-in: %v, want good", r)
+	}
+	if st := e.View().Stats; st.Wrong != 0 {
+		t.Errorf("%d wrong notes, want none", st.Wrong)
+	}
+}
+
+func TestLateNoteAtTheLoopsEnd(t *testing.T) {
+	// Bar 3 at four times the speed (a bar of 3/4 takes 500 ms): <b d>
+	// held on, c b a in a triplet, then G4 at 333 ms. The loop goes back
+	// at 500 ms; G4 played at 583 ms is late, but in time.
+	e := New(loadFeatures(t), Settings{Mode: Play, Hand: Right, Tempo: 4, Loop: true, LoopFrom: 3, LoopTo: 3})
+	e.Start(0)
+	run(e, 0, 583*time.Millisecond)
+	if _, r := e.NoteOn(583*time.Millisecond, 67, MIDIKeyboard); r != Good {
+		t.Errorf("G4 250 ms late, after the loop went back: %v, want good", r)
+	}
+	if st := e.View().Stats; st.Wrong != 0 || st.Missed != 3 {
+		t.Errorf("stats %+v, want the triplet missed and nothing wrong", st)
+	}
+}
+
+func TestTremolos(t *testing.T) {
+	e := New(load(t, "tremolos"), Settings{Mode: Listen, Hand: Both})
+	e.Start(0)
+	count := map[int]int{}
+	for _, s := range noteOns(run(e, 0, 5*time.Second), ScoreOut) {
+		count[s.Pitch]++
+	}
+	// C5 and E5 take turns four times; then C5 twice, four times and once.
+	// The other staff's C3s are struck once each.
+	if want := map[int]int{72: 11, 76: 4, 48: 5}; !maps.Equal(count, want) {
+		t.Errorf("struck %v, want %v", count, want)
 	}
 }

@@ -324,15 +324,7 @@ func (w *window) choice(names []string, choose func(int)) *gtk.DropDown {
 
 func (w *window) buildLoopPanel() *gtk.Popover {
 	c := &w.c
-	c.loopOn = w.toggle(func(on bool) {
-		set := w.s.settings()
-		from, to := set.LoopFrom, set.LoopTo
-		if on && to <= from { // first use: four bars from here
-			from = w.s.view().Bar
-			to = from + 3
-		}
-		w.setLoop(on, from, to)
-	})
+	c.loopOn = w.toggle(w.switchLoop)
 	c.loopFrom = gtk.NewLabel("")
 	c.loopTo = gtk.NewLabel("")
 	c.loopFrom.SetWidthChars(4)

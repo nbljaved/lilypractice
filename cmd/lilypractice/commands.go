@@ -24,8 +24,8 @@ var commands = []command{
 	{"start", "back to the start", (*window).restart},
 	{"bar-back", "back a bar", func(w *window) { w.moveBars(-1) }},
 	{"bar-forward", "forward a bar", func(w *window) { w.moveBars(1) }},
-	{"note-back", "back a note", func(w *window) { w.seekGroup(w.s.eng.Next() - 1) }},
-	{"note-forward", "forward a note", func(w *window) { w.seekGroup(w.s.eng.Next() + 1) }},
+	{"note-back", "back a note", func(w *window) { w.stepNote(-1) }},
+	{"note-forward", "forward a note", func(w *window) { w.stepNote(1) }},
 	{"slower", "tempo −5%", func(w *window) { w.changeTempo(-0.05) }},
 	{"faster", "tempo +5%", func(w *window) { w.changeTempo(0.05) }},
 	{"metronome", "metronome on / off", func(w *window) { w.setMetronome(!w.s.settings().Metronome) }},
@@ -97,16 +97,18 @@ func (w *window) toggleCountIn() {
 	}
 }
 
-// toggleLoop turns the loop on or off; the first time, it loops four bars
+func (w *window) toggleLoop() { w.switchLoop(!w.s.settings().Loop) }
+
+// switchLoop turns the loop on or off; the first time, it loops four bars
 // from the current one.
-func (w *window) toggleLoop() {
+func (w *window) switchLoop(on bool) {
 	set := w.s.settings()
 	from, to := set.LoopFrom, set.LoopTo
-	if !set.Loop && to <= from {
+	if on && !w.loopSet {
 		from = w.s.view().Bar
 		to = from + 3
 	}
-	w.setLoop(!set.Loop, from, to)
+	w.setLoop(on, from, to)
 }
 
 // commandKeys keeps the MIDI command keys up to date with their file,

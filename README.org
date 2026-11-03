@@ -5,7 +5,52 @@ PianoBooster: the real engraving with a cursor that follows the music, three
 practice modes, scoring, loops, and the hand you are not practising played
 for you. Native (Go, GTK 4, librsvg, ALSA), for Guix.
 
-* Run it
+*A vibe-coded project, for personal use.* An AI assistant (Claude) wrote
+nearly all of it, as I asked for features and tried them out while learning
+the piano. It does what I need on my machines (Linux, with Guix), and it is
+tested (unit tests, end-to-end tests, 100 scores from Mutopia), but it is no
+maintained product: expect rough edges and no support, and read the code
+before you rely on it.
+
+* What it does
+- Shows a score as LilyPond engraves it, page by page, with a cursor that
+  follows the music and notes lit as they sound: blue for the right hand,
+  orange for the left.
+- Opens any =.ly= file, and lists the others in its folder. Scores written
+  for an older LilyPond (most of Mutopia's) are updated on a copy with
+  =convert-ly=.
+- Three modes: /wait/ (the music waits for your notes), /play/ (it keeps
+  time and scores you: perfect, good, missed, wrong) and /listen/.
+- Practise the right hand, the left or both; the program plays the rest.
+- Tempo, loops of bars, a metronome with nine sounds, a count-in.
+- Follows the score's repeats (volta repeats, alternative endings, D.S.
+  and D.C. al Fine), tremolos, ties, grace notes, pedal markings and tempo
+  changes; several scores in one file; hidden notes; transposing
+  instruments.
+- Plays with a MIDI keyboard, the computer keyboard (two rows like a
+  piano) or the mouse on the piano on screen. Keys of a MIDI keyboard can
+  be commands (play, back a bar, faster...).
+- Sounds through FluidSynth, started for you, or any ALSA synth (Pianoteq,
+  a hardware module...).
+
+* What it doesn't do
+- Read anything but LilyPond: no MusicXML, MIDI or PDF scores.
+- Hear an acoustic piano: you play a MIDI keyboard, the computer keyboard
+  or the mouse.
+- Run outside Linux: it needs ALSA and GTK 4, and is only packaged for
+  Guix.
+- Edit or transpose scores, show falling notes (as Synthesia does), or
+  keep a history of your practice across sessions.
+- Follow repeats written only as text ("D.C. al Fine" in a markup, as older
+  scores do) or as plain bar lines, or coda jumps; play percent repeats.
+- See a tempo set only inside a =\midi= block (common in Mutopia files):
+  such scores play at ♩ = 60. Use ↑ ↓ or =-tempo=.
+- Play drum staves: unpitched notes are left out.
+
+* Install and run
+On my machines it is a Guix package, from the personal channel in my
+dotfiles (=guix-config/modules/nbl/packages/lilypractice.scm=). From a
+checkout, =run.sh= builds and starts it instead:
 #+begin_src sh
 ./run.sh testdata/bach-invention-01.ly   # this piece; the list has its folder
 ./run.sh ~/music                         # choose from the scores of ~/music
@@ -13,10 +58,11 @@ for you. Native (Go, GTK 4, librsvg, ALSA), for Guix.
 ./run.sh -mode play -hand left -tempo 70 piece.ly
 ./run.sh -h          # all flags
 #+end_src
-=run.sh= builds the program in the Guix environment from =manifest.scm=
-(the first build takes about 5 minutes) and starts it. It drops
-=LD_LIBRARY_PATH=: on this machine that points at Nix's alsa-lib, which
-breaks Guix programs that use ALSA.
+Installed, the command is =lilypractice=, with the same arguments. =run.sh=
+builds the program in the Guix environment from =manifest.scm= (the first
+build takes about 5 minutes) and starts it. It drops =LD_LIBRARY_PATH=: on
+this machine that points at Nix's alsa-lib, which breaks Guix programs that
+use ALSA.
 
 A list on the left shows the LilyPond files (=.ly=) of the folder, with the
 title and composer from their =\header=; click one to practise it. It
@@ -55,7 +101,7 @@ and the errors are printed.
   real pitch.
 - *Which staff is which hand*: a piano's own two staves (a =PianoStaff= or
   =GrandStaff=) come first, so a singer's or a horn's staff above them is
-  played for you; then staves named for a hand (=right=, =lh=, =upper=,
+  played for you; then staves named for each hand (=right=, =lh=, =upper=,
   =pianoDown=, =links=...); then the top two.
 
 * Modes
@@ -71,7 +117,8 @@ and the errors are printed.
 
 Choose which hand you play (right, left or both), the tempo, a *loop* of
 bars, the metronome and a count-in (0–4 bars, in the settings; the cursor
-waits at the start while it counts down). The metronome and count-in can
+waits at the start while it counts down, and keys you try meanwhile don't
+count). The metronome and count-in can
 sound as a wood block, a metronome (bell and click), claves, side stick,
 cowbell, hi-hat, triangle, hand clap or sticks, at 10–140% volume: in the
 settings, or right-click the Metronome button. You hear the new sound at
@@ -268,13 +315,13 @@ keys-out for setups where it can't.
 
 * Tests
 #+begin_src sh
-out/bin/lpcheck testdata/*.ly   # also compiles what the engine tests read
 env -u LD_LIBRARY_PATH guix shell -m manifest.scm -- go test ./...
 test/e2e.sh      # the real program on a virtual display, without sound
 test/corpus.sh   # 100 real scores from Mutopia (about 3 minutes)
 #+end_src
-The end-to-end tests use their own ALSA client name, so a lilypractice you
-have open is not disturbed.
+The engine's tests engrave their pieces in =testdata= with LilyPond (kept in
+the temporary folder until they change). The end-to-end tests use their own
+ALSA client name, so a lilypractice you have open is not disturbed.
 
 *Corpus*: =out/bin/lpfetch= downloaded 100 keyboard pieces from Mutopia into
 =testdata/mutopia= (at most three per composer, picked at random with a
@@ -293,8 +340,8 @@ Anything else is reported as NEW.
 =lilypond/lilypractice.ly= is loaded into LilyPond with
 =-dinclude-settings=, so scores need no changes. It gives each note head an
 SVG id and writes =piece.notes.json= with every note's time, length, pitch,
-staff and voice, plus ties, bars, tempos, time signatures, pedals, repeats
-and tremolos. The program plays from that JSON and finds each note in the
+staff, voice and tremolo, plus ties, bars, tempos, time signatures, pedals
+and repeats. The program plays from that JSON and finds each note in the
 picture by its id.
 
 | Directory   | What it holds                                            |
@@ -310,11 +357,3 @@ picture by its id.
 | =cmd/=      | lilypractice and the helper commands                     |
 | =test/=     | end-to-end tests                                         |
 | =testdata/= | test pieces                                              |
-
-* Known limits
-- Repeats written only as text ("D.C. al Fine" as a markup, as older
-  scores do) or as plain bar lines can't be followed; nor can coda jumps.
-  Percent repeats aren't played.
-- A tempo set only inside a =\midi= block (common in Mutopia files) is not
-  seen; such scores play at ♩ = 60. Use ↑ ↓ or =-tempo=.
-- No transposing, and no practice history across sessions yet.

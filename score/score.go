@@ -65,17 +65,13 @@ type Note struct {
 	// Hidden notes sound but can't be seen: transparent, or without a
 	// note head, as scores use them to carry a tie or a voice.
 	Hidden bool `json:"hidden"`
-	// Tremolo is how often a one-note tremolo strikes the note, as in
-	// \repeat tremolo 4 c8, which is written c2 with a stroke.
+	// Tremolo is how often a tremolo strikes the note. A one-note tremolo,
+	// \repeat tremolo 4 c8 (written c2 with a stroke), strikes it again
+	// and again. A two-note one, \repeat tremolo 4 { c16 e }, is written
+	// as two notes one after the other, each for half its time, and they
+	// take turns: Pair is 1 for the first and 2 for the second.
 	Tremolo *Rat `json:"tremolo"`
-}
-
-// TremoloSpan is a two-note tremolo, \repeat tremolo 4 { c16 e }: its
-// notes are written one after the other, each for half the span, and
-// alternate every Interval.
-type TremoloSpan struct {
-	From, To Moment
-	Interval Rat
+	Pair    int  `json:"pair"`
 }
 
 // Head is the id of the note head a note is drawn with. A tremolo strikes
@@ -131,7 +127,6 @@ type Score struct {
 	Tempos         []Tempo         `json:"tempos"`
 	Pedals         []Pedal         `json:"pedals"`
 	Repeats        []Repeat        `json:"repeats"`
-	Tremolos       []TremoloSpan   `json:"tremolos"`
 	TimeSignatures []TimeSignature `json:"timeSignatures"`
 	// LooseTies counts the ties Load dropped because a repeat lies between
 	// their notes, as for a tie into a second ending: that note is played
@@ -147,7 +142,6 @@ func Load(path string) (*Score, error) {
 		return nil, err
 	}
 	s.playTremolos()
-	s.dropLooseTies()
 	return s, nil
 }
 
@@ -186,39 +180,24 @@ func (s *Score) playTremolos() {
 			k++
 		}
 	}
-	inTremoloSpan := func(n Note) (TremoloSpan, bool, bool) { // the span, and whether n is its second note
-		for _, t := range s.Tremolos {
-			from, to := t.From.Main.Big(), t.To.Main.Big()
-			half := new(big.Rat).Quo(new(big.Rat).Sub(to, from), big.NewRat(2, 1))
-			mid := new(big.Rat).Add(from, half)
-			at := n.At.Main.Big()
-			if n.Duration.Big().Cmp(half) == 0 && t.Interval.Num > 0 {
-				switch {
-				case at.Cmp(from) == 0:
-					return t, false, true
-				case at.Cmp(mid) == 0:
-					return t, true, true
-				}
-			}
-		}
-		return TremoloSpan{}, false, false
-	}
 	for _, n := range s.Notes {
-		if t, second, ok := inTremoloSpan(n); ok {
-			offset := int64(0)
-			if second {
-				offset = 1
+		if n.Tremolo == nil || n.Tremolo.Num <= 0 || n.At.Grace.Num != 0 {
+			notes = append(notes, n)
+			continue
+		}
+		at, length := n.At.Main.Big(), n.Duration.Big()
+		switch n.Pair {
+		case 1: // the pair's time is twice the note's, from here
+			strikes(n, at, new(big.Rat).Add(at, new(big.Rat).Add(length, length)), n.Tremolo.Big(), 0, 2)
+		case 2: // the second note's strikes start one interval into the pair's time
+			strikes(n, new(big.Rat).Sub(at, length), new(big.Rat).Add(at, length), n.Tremolo.Big(), 1, 2)
+		default:
+			if n.Tremolo.Cmp(n.Duration) < 0 {
+				strikes(n, at, new(big.Rat).Add(at, length), n.Tremolo.Big(), 0, 1)
+			} else {
+				notes = append(notes, n)
 			}
-			strikes(n, t.From.Main.Big(), t.To.Main.Big(), t.Interval.Big(), offset, 2)
-			// The second note's strikes start with the span, one interval in.
-			continue
 		}
-		if n.Tremolo != nil && n.Tremolo.Num > 0 && n.Tremolo.Cmp(n.Duration) < 0 && n.At.Grace.Num == 0 {
-			start := n.At.Main.Big()
-			strikes(n, start, new(big.Rat).Add(start, n.Duration.Big()), n.Tremolo.Big(), 0, 1)
-			continue
-		}
-		notes = append(notes, n)
 	}
 	s.Notes = notes
 }

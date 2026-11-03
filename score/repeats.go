@@ -80,7 +80,6 @@ func (s *Score) PlayOrder(end Rat) []Span {
 		stack    []*repeat
 		spans    []Span
 		from     = zero
-		lastEnd  = zero // where the last repeat ended: an end without a start goes back here
 		segnos   []Rat
 		dsTimes  = map[int]int{}
 		jumpedDS bool
@@ -119,8 +118,9 @@ func (s *Score) PlayOrder(end Rat) []Span {
 			i++
 
 		case "end":
-			if len(stack) == 0 { // the repeat began where the last one ended
-				stack = append(stack, &repeat{start: lastEnd, after: firstAt(lastEnd), pass: 1})
+			if len(stack) == 0 { // as after a D.S. into a repeat: play on
+				i++
+				continue
 			}
 			r := stack[len(stack)-1]
 			returns := 1
@@ -139,7 +139,6 @@ func (s *Score) PlayOrder(end Rat) []Span {
 			if !r.alternatives {
 				cut(at)
 				stack = stack[:len(stack)-1]
-				lastEnd = at
 			}
 			i++
 
@@ -152,7 +151,6 @@ func (s *Score) PlayOrder(end Rat) []Span {
 			if ev.Dir != nil && *ev.Dir == 1 { // past the last alternative
 				cut(at)
 				stack = stack[:len(stack)-1]
-				lastEnd = at
 				i++
 				continue
 			}

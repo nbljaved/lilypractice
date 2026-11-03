@@ -25,8 +25,8 @@ func TestPlayOrder(t *testing.T) {
 		want    string // from-to/pass of each span, in bars of a whole note
 	}{
 		{"no repeats", nil, 4, "0-4/0 "},
-		{"an end with no start goes back to the beginning",
-			[]Repeat{{At: at(2), Kind: "end", Returns: n(1)}},
+		{"a repeat from the beginning",
+			[]Repeat{{At: at(0), Kind: "start", Count: n(2)}, {At: at(2), Kind: "end", Returns: n(1)}},
 			4, "0-2/1 0-2/2 2-4/0 "},
 		{"an ending for the first two passes, and one for the third",
 			[]Repeat{
@@ -45,6 +45,7 @@ func TestPlayOrder(t *testing.T) {
 			4, "0-4/0 0-2/0 "},
 		{"a repeat ending after the last note, past a closing rest",
 			[]Repeat{
+				{At: at(0), Kind: "start", Count: n(2)},
 				{At: at(2), Kind: "end", Returns: n(1)},
 				{At: at(2), Kind: "start", Count: n(2)},
 				{At: at(5), Kind: "end", Returns: n(1)},
@@ -65,8 +66,9 @@ func TestPlayOrder(t *testing.T) {
 }
 
 func TestRepeatCopiesFromEveryStaffCountOnce(t *testing.T) {
+	start := Repeat{At: at(0), Kind: "start", Count: n(2)}
 	end := Repeat{At: at(2), Kind: "end", Returns: n(1)}
-	s := &Score{Repeats: uniqueRepeats([]Repeat{end, end})}
+	s := &Score{Repeats: uniqueRepeats([]Repeat{start, end, start, end})}
 	if got, want := order(s, 4), "0-2/1 0-2/2 2-4/0 "; got != want {
 		t.Errorf("%s, want %s", got, want)
 	}
@@ -74,17 +76,19 @@ func TestRepeatCopiesFromEveryStaffCountOnce(t *testing.T) {
 
 func TestTremolosArePlayedOut(t *testing.T) {
 	r := func(n, d int64) Rat { return Rat{n, d} }
-	eighth := r(1, 8)
+	eighth, sixteenth := r(1, 8), r(1, 16)
 	s := &Score{
 		Notes: []Note{
 			// \repeat tremolo 4 c8: written c2, struck four times.
 			{ID: "n1", At: Moment{r(0, 1), r(0, 1)}, Duration: r(1, 2), Pitch: 60, Tremolo: &eighth},
 			// \repeat tremolo 2 { d16 f }: written d8 f8, alternating.
-			{ID: "n2", At: Moment{r(1, 2), r(0, 1)}, Duration: r(1, 8), Pitch: 62},
-			{ID: "n3", At: Moment{r(5, 8), r(0, 1)}, Duration: r(1, 8), Pitch: 65},
-			{ID: "n4", At: Moment{r(3, 4), r(0, 1)}, Duration: r(1, 4), Pitch: 67},
+			{ID: "n2", At: Moment{r(1, 2), r(0, 1)}, Duration: r(1, 8), Pitch: 62, Tremolo: &sixteenth, Pair: 1},
+			{ID: "n3", At: Moment{r(5, 8), r(0, 1)}, Duration: r(1, 8), Pitch: 65, Tremolo: &sixteenth, Pair: 2},
+			// Another staff's eighths at the same times stay as they are.
+			{ID: "n4", At: Moment{r(1, 2), r(0, 1)}, Duration: r(1, 8), Pitch: 48, Staff: 1},
+			{ID: "n5", At: Moment{r(5, 8), r(0, 1)}, Duration: r(1, 8), Pitch: 50, Staff: 1},
+			{ID: "n6", At: Moment{r(3, 4), r(0, 1)}, Duration: r(1, 4), Pitch: 67},
 		},
-		Tremolos: []TremoloSpan{{From: Moment{r(1, 2), r(0, 1)}, To: Moment{r(3, 4), r(0, 1)}, Interval: r(1, 16)}},
 	}
 	s.playTremolos()
 	var got string
@@ -92,11 +96,11 @@ func TestTremolosArePlayedOut(t *testing.T) {
 		got += fmt.Sprintf("%s@%v/%v ", n.ID, n.At.Main.Big().RatString(), n.Pitch)
 	}
 	want := "n1@0/60 n1~2@1/8/60 n1~3@1/4/60 n1~4@3/8/60 " +
-		"n2@1/2/62 n2~2@5/8/62 n3@9/16/65 n3~2@11/16/65 n4@3/4/67 "
+		"n2@1/2/62 n2~2@5/8/62 n3@9/16/65 n3~2@11/16/65 n4@1/2/48 n5@5/8/50 n6@3/4/67 "
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
-	if Head("n1~3") != "n1" || Head("n4") != "n4" {
+	if Head("n1~3") != "n1" || Head("n6") != "n6" {
 		t.Error("Head doesn't find the note head")
 	}
 }

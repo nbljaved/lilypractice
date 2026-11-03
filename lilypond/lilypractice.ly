@@ -68,6 +68,31 @@
                           "-" (number->string score)
                           (substring base dot))))))
 
+%% Two-note tremolos (\repeat tremolo 4 { c16 e }), found in each voice:
+%% note head -> the tremolo's speed and which of its two notes it is. The
+%% beam drawn between them is no sure sign, as a score may beam them itself.
+#(define lp-tremolo-pairs (make-hash-table))
+#(define (Lp_tremolo_engraver context)
+   (let ((type #f)    ; from the tremolo's start until its second note
+         (first #f)   ; when its first note is
+         (second #f)) ; its second note has come
+     (make-engraver
+      (listeners
+       ((tremolo-span-event engraver event)
+        (when (eqv? (ly:event-property event 'span-direction) START)
+          (set! type (ly:event-property event 'tremolo-type 16))
+          (set! first #f)
+          (set! second #f))))
+      (acknowledgers
+       ((note-head-interface engraver grob source-engraver)
+        (when type
+          (let ((now (ly:context-current-moment context)))
+            (unless first (set! first now))
+            (set! second (ly:moment<? first now))
+            (hashq-set! lp-tremolo-pairs grob (cons type (if second 2 1)))))))
+      ((stop-translation-timestep engraver)
+       (when second (set! type #f))))))
+
 #(define (Lp_notes_engraver context)
    ;; The score's number is given out at the end, and only if it has
    ;; staves: a chord drawn in a markup with \score has none, and is no
@@ -85,8 +110,6 @@
          (time-sigs '())
          (pedals '())
          (repeats '())
-         (tremolos '())     ; two-note tremolos: where they start and end
-         (tremolo-start #f)
          (last-bar #f)
          (last-tempo #f)
          (last-time-sig #f)
@@ -150,15 +173,18 @@
        (index-of ctx voices (lambda (t) (set! voices t)) ly:context-id))
 
      (define (tremolo-of head)
-       ;; A one-note tremolo (\repeat tremolo 4 c8, or c2:8) is struck
-       ;; over and over: its stem's strokes say how fast, one stroke for
-       ;; eighths.
+       ;; How often a tremolo strikes the note, as its event says (its
+       ;; strokes don't: an eighth's flag counts as one). A one-note
+       ;; tremolo (c2:8, or \repeat tremolo 4 c8) has its strokes on the
+       ;; stem; a two-note one has "pair", 1 or 2, for which note this is.
        (let* ((stem (ly:grob-object head 'stem))
               (flag (and (ly:grob? stem) (ly:grob-object stem 'tremolo-flag)))
-              (strokes (and (ly:grob? flag) (ly:grob-property flag 'flag-count #f))))
-         (if (and (integer? strokes) (> strokes 0))
-             (format #f "[1,~a]" (expt 2 (+ strokes 2)))
-             "null")))
+              (event (and (ly:grob? flag) (ly:grob-property flag 'cause #f)))
+              (one (and (ly:stream-event? event) (ly:event-property event 'tremolo-type #f)))
+              (two (hashq-ref lp-tremolo-pairs head #f)))
+         (cond ((integer? one) (format #f "\"tremolo\":[1,~a]" one))
+               (two (format #f "\"tremolo\":[1,~a],\"pair\":~a" (car two) (cdr two)))
+               (else "\"tremolo\":null"))))
 
      (define (note-id k)
        (if (= score 1)
@@ -202,7 +228,6 @@
              (format port "\"tempos\": [\n  ~a],\n" (lp-join (reverse tempos)))
              (format port "\"pedals\": [\n  ~a],\n" (lp-join (reverse pedals)))
              (format port "\"repeats\": [\n  ~a],\n" (lp-join (reverse repeats)))
-             (format port "\"tremolos\": [\n  ~a],\n" (lp-join (reverse tremolos)))
              (format port "\"timeSignatures\": [\n  ~a]\n}\n"
                      (lp-join (reverse time-sigs)))))
          (ly:message "lilypractice: ~a notes written to ~a" count path)))
@@ -245,23 +270,6 @@
        ((sustain-event engraver event) (pedal! "sustain" event))
        ((sostenuto-event engraver event) (pedal! "sostenuto" event))
        ((una-corda-event engraver event) (pedal! "una-corda" event))
-       ((tremolo-span-event engraver event)
-        ;; \repeat tremolo 4 { c16 e }: the two notes alternate from the
-        ;; start to the stop, at the speed the start gives. When one
-        ;; tremolo follows another, the next may start before the last
-        ;; stops.
-        (let ((now (ly:context-current-moment context)))
-          (define (close!)
-            (when (and tremolo-start (ly:moment<? (car tremolo-start) now))
-              (set! tremolos
-                    (cons (format #f "{\"from\":~a,\"to\":~a,\"interval\":[1,~a]}"
-                                  (lp-moment (car tremolo-start)) (lp-moment now)
-                                  (cdr tremolo-start))
-                          tremolos))
-              (set! tremolo-start #f)))
-          (close!)
-          (when (eqv? (ly:event-property event 'span-direction) START)
-            (set! tremolo-start (cons now (ly:event-property event 'tremolo-type 16))))))
        ((volta-repeat-start-event engraver event) (repeat! "start" event))
        ((volta-repeat-end-event engraver event) (repeat! "end" event))
        ((alternative-event engraver event) (repeat! "alternative" event))
@@ -316,7 +324,7 @@
                             ;; are written: by then a chord's stem is
                             ;; complete.
                             (lambda ()
-                              (format #f "{\"id\":~a,~a,\"tremolo\":~a}"
+                              (format #f "{\"id\":~a,~a,~a}"
                                       (lp-string (note-id k)) entry (tremolo-of grob))))
                           notes))))))
        ((tie-interface engraver grob source-engraver)
@@ -348,5 +356,9 @@
   \context {
     \Score
     \consists #Lp_notes_engraver
+  }
+  \context {
+    \Voice
+    \consists #Lp_tremolo_engraver
   }
 }

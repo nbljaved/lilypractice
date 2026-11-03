@@ -29,7 +29,6 @@ const (
 	ClickOut             // metronome and count-in
 )
 
-// Out is a note to send.
 // Out is a note to send, or, when Controller is set, a controller change
 // such as the sustain pedal.
 type Out struct {
@@ -121,7 +120,6 @@ const (
 	defaultWholesPerMinute = 15.0                   // ♩ = 60, LilyPond's default
 	scoreVelocity          = 80
 	guideVelocity          = 50
-	clickChannel           = ClickChannel
 	clickAccent            = 76
 	clickBeat              = 77
 	clickLength            = 1.0 / 64
@@ -232,8 +230,7 @@ type Engine struct {
 	next                       int // next group to reach
 	nextClick                  int
 	countIn                    []click
-	countInEnd, countInBeat    float64
-	inCountIn                  bool // until the music reaches countInEnd
+	countInEnd, countInBeat    float64 // where the music starts, and the count-in's beat
 	loopFrom, loopTo           float64
 	si                         int          // the span being played
 	offs                       []pendingOff // sorted by pos
@@ -361,7 +358,7 @@ func position(m score.Moment) float64 { return m.Main.Float64() + m.Grace.Float6
 
 // Hands decides which staff each hand reads. A piano's own two staves (a
 // PianoStaff or GrandStaff) come first, so that a singer's or a horn's
-// staff above them is played for you; then staves named for a hand
+// staff above them is played for you; then staves named for each hand
 // ("right", "lh", "upper", "pianoDown", "links"...); then the first
 // two. The upper of two staves is the right hand's unless names say
 // otherwise. Other staves are always played by the program.
@@ -416,12 +413,16 @@ func Hands(staves []score.Named) map[int]Hand {
 	}
 
 	h := make(map[int]Hand)
+	var named [2]bool
 	for _, st := range sorted {
 		if hand, ok := byName(st); ok {
 			h[st.Index] = hand
+			named[hand] = true
 		}
 	}
-	if len(h) > 0 {
+	// Names alone decide if they name both hands, or name the only staff:
+	// "melody" and "bass" are the first two staves.
+	if named[Right] && named[Left] || len(sorted) == 1 && len(h) == 1 {
 		return h
 	}
 	if len(sorted) >= 2 {
@@ -778,7 +779,7 @@ func (e *Engine) Start(now time.Duration) []Out {
 	e.si = e.spanAt(start)
 	e.nextClick = sort.Search(len(e.clicks), func(i int) bool { return e.clicks[i].pos >= start-epsilon })
 	e.countIn = nil
-	e.inCountIn = false
+	e.countInEnd = start
 	if e.set.CountIn > 0 {
 		m := e.meterAt(start)
 		perBar := int(math.Round(m.length / m.beat))
@@ -787,9 +788,7 @@ func (e *Engine) Start(now time.Duration) []Out {
 			e.countIn = append(e.countIn, click{start - length + float64(k)*m.beat, k%perBar == 0})
 		}
 		e.pos = start - length
-		e.countInEnd = start
 		e.countInBeat = m.beat
-		e.inCountIn = true
 	}
 	return e.placePedals(start)
 }
@@ -798,7 +797,6 @@ func (e *Engine) Start(now time.Duration) []Out {
 func (e *Engine) Stop() []Out {
 	out := e.silence()
 	e.countIn = nil
-	e.inCountIn = false
 	e.due = nil
 	e.playing, e.waiting = false, false
 	if e.next < len(e.groups) {
@@ -823,18 +821,22 @@ func (e *Engine) silence() []Out {
 	return out
 }
 
-// jump moves the music to pos, for the loop. Your notes start afresh.
-// It returns the pedals already down at pos.
+// jump moves the music to pos, for the loop or a repeat. Your notes start
+// afresh, but those just due may still be played, a little late. It
+// returns the pedals already down at pos.
 func (e *Engine) jump(pos float64) []Out {
 	e.next = sort.Search(len(e.groups), func(i int) bool { return e.groups[i].pos >= pos-epsilon })
 	e.nextClick = sort.Search(len(e.clicks), func(i int) bool { return e.clicks[i].pos >= pos-epsilon })
 	e.pos = pos
+	e.countInEnd = min(e.countInEnd, pos)
 	e.waiting = false
 	clear(e.hit)
 	clear(e.missed)
-	e.due = nil
 	return e.placePedals(pos)
 }
+
+// countingIn says whether the count-in is on: the music hasn't started.
+func (e *Engine) countingIn() bool { return e.playing && e.pos < e.countInEnd-epsilon }
 
 func (e *Engine) speed() float64 { // whole notes per second
 	pos := e.pos
@@ -980,9 +982,6 @@ func (e *Engine) Advance(now time.Duration) []Out {
 		}
 	}
 	e.pos = target
-	if e.inCountIn && e.pos >= e.countInEnd-epsilon {
-		e.inCountIn = false
-	}
 	if e.next >= len(e.groups) && len(e.offs) == 0 && !e.looping() && !e.repeatAhead() {
 		out = append(out, e.silence()...) // a pedal may still be down
 		e.playing, e.finished = false, true
@@ -1011,11 +1010,11 @@ func (e *Engine) playClick(c click) []Out {
 		pitch = cmp.Or(e.set.ClickAccent, clickAccent)
 	}
 	velocity := ClickVelocity(c.accent, e.set.ClickVolume)
-	s := sounding{ClickOut, clickChannel, pitch}
+	s := sounding{ClickOut, ClickChannel, pitch}
 	id := "click"
 	e.sounding[s] = id
 	e.addOff(pendingOff{e.pos + clickLength, s, id})
-	return []Out{{Port: ClickOut, On: true, Channel: clickChannel, Pitch: pitch, Velocity: velocity}}
+	return []Out{{Port: ClickOut, On: true, Channel: ClickChannel, Pitch: pitch, Velocity: velocity}}
 }
 
 // heard reports whether the program plays a note at all: in listen mode
@@ -1067,7 +1066,7 @@ func (e *Engine) release(gi int) []Out {
 
 // channelOf gives each staff its own MIDI channel, skipping percussion.
 func channelOf(staff int) int {
-	if staff >= clickChannel {
+	if staff >= ClickChannel {
 		staff++
 	}
 	return min(staff, 15)
@@ -1137,6 +1136,9 @@ func (e *Engine) NoteOn(now time.Duration, pitch int, src Source) ([]Out, Result
 	// The notes being waited for, or coming up soon.
 	k := e.upcoming()
 	if k < 0 {
+		if e.countingIn() {
+			return out, Ignored // finding the first note
+		}
 		return out, e.wrong(pitch)
 	}
 	g := &e.groups[k]
@@ -1239,7 +1241,7 @@ func (e *Engine) View() View {
 		Playing:    e.playing,
 		Waiting:    e.waiting,
 		Finished:   e.finished,
-		CountingIn: e.inCountIn,
+		CountingIn: e.countingIn(),
 		Pos:        e.pos,
 		Stats:      e.stats,
 		QuarterBPM: e.speed() * 60 * 4,
@@ -1317,17 +1319,6 @@ func (e *Engine) Groups() (pos []float64, ids [][]string) {
 		ids = append(ids, gi)
 	}
 	return pos, ids
-}
-
-// Pitches gives the lowest and highest note in the score.
-func (e *Engine) Pitches() (low, high int) {
-	low, high = 127, 0
-	for _, g := range e.groups {
-		for _, n := range g.notes {
-			low, high = min(low, n.pitch), max(high, n.pitch)
-		}
-	}
-	return low, high
 }
 
 // handOf is the hand that plays a note, or OtherStaff.

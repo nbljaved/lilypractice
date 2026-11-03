@@ -357,6 +357,7 @@ func (w *window) addPianoMouse() {
 		}
 		if p != w.pianoHover {
 			w.pianoHover = p
+			w.piano.QueueDraw()
 			if ok {
 				w.piano.SetCursorFromName("pointer")
 			} else {
@@ -364,7 +365,10 @@ func (w *window) addPianoMouse() {
 			}
 		}
 	})
-	motion.ConnectLeave(func() { w.pianoHover = -1 })
+	motion.ConnectLeave(func() {
+		w.pianoHover = -1
+		w.piano.QueueDraw()
+	})
 	w.piano.AddController(motion)
 }
 

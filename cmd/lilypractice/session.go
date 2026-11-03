@@ -316,18 +316,20 @@ func (s *session) heldKeys() map[int]heldKey {
 }
 
 // runTiming keeps the music moving: it advances the engine when the next
-// note is due, and at least every 20 ms.
+// note is due, and at least every 20 ms. Stopped, or waiting for you, it
+// sleeps until do wakes it.
 func (s *session) runTiming() {
 	timer := time.NewTimer(0)
 	for {
 		s.mu.Lock()
 		s.send(s.eng.Advance(s.now()))
-		wait := 20 * time.Millisecond
-		if d := s.eng.UntilNext(); d >= 0 && d < wait {
-			wait = d
-		}
+		d := s.eng.UntilNext()
 		s.mu.Unlock()
-		timer.Reset(wait)
+		if d < 0 {
+			<-s.wake
+			continue
+		}
+		timer.Reset(min(d, 20*time.Millisecond))
 		select {
 		case <-timer.C:
 		case <-s.wake:

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,7 +108,9 @@ func loadScore(ctx context.Context, path string, chosen int, force bool) loaded 
 	if err != nil {
 		return loaded{err: err}
 	}
-	out, err := lilypond.Compile(ctx, path, filepath.Join(cache, "lilypractice", scoreName(path)), force)
+	// Named for the file, and kept apart from files of the same name elsewhere.
+	dir := fmt.Sprintf("%s-%.4x", scoreName(path), sha256.Sum256([]byte(path)))
+	out, err := lilypond.Compile(ctx, path, filepath.Join(cache, "lilypractice", dir), force)
 	if err != nil {
 		return loaded{err: err}
 	}
@@ -181,6 +184,7 @@ func (w *window) replaceEngine(eng *practice.Engine) {
 	w.s.replaceEngine(eng)
 	w.takeEngine()
 	w.drag = loopDrag{}
+	w.loopSet = false
 	w.wrongSeen = 0
 	w.manualAt = time.Time{}
 	w.dirty = true
