@@ -1,0 +1,16 @@
+piece	why it fails lpcheck (not a lilypractice problem)
+10-02-i	LilyPond: the score has \new Voice = "rechts" with no music after it, which LilyPond 2.26 rejects
+clementi-op42	LilyPond: the score uses a markup command (chapter-title) its includes no longer define
+L117-prel-4	LilyPond: the score's own Scheme calls ly:tie::calc-control-points on a laissez vibrer tie
+rach-prelude23-01	LilyPond: articulations set the pre-2.23 way (no side-axis for Script); fails without lilypractice too
+rach-prelude23-03	LilyPond crashes (segmentation fault) on the converted score, with or without lilypractice
+rach-prelude23-05	LilyPond: numerical overflow in the score's own settings; fails without lilypractice too
+TheDyingSwan	LilyPond: convert-ly leaves "\ottava #1\tuplet", which Scheme reads as one word
+contrapunctusI	MIDI: the MIDI score has the four voices only; the printed one adds a piano reduction of them
+SchubertF-D120-TrostInThraenen	MIDI: a separate MIDI score with a lead-in and other variables
+SchubertF-D259-AnDenMond	MIDI: a separate MIDI score with a lead-in, playing more than is printed
+SchubertF-D493_DerWanderer	MIDI: a separate MIDI score with a lead-in, playing more than is printed
+enchanted-island	MIDI: the author wrote the tremolandos out differently for MIDI (see the score's comment)
+nobm	MIDI: plays \repeat tremolo out but holds c2:32 tremolos; lilypractice strikes both out
+Fischer_EratoAllemande	MIDI: two unisons across voices that LilyPond's MIDI merges
+chopin-op23-ballade-1	MIDI: a separate MIDI score of the music tagged 'played, which differs on purpose from the 'printed (made from 'printed, it matches)
