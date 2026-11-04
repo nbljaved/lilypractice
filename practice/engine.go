@@ -361,10 +361,27 @@ func (e *Engine) placePedals(pos float64) []Out {
 	for _, p := range e.pedals[:e.nextPedal] {
 		e.scorePedal[p.controller] = p.down
 	}
+	return e.pressScorePedals()
+}
+
+// pressScorePedals plays the score's pedals that are down here, unless you
+// pedal yourself.
+func (e *Engine) pressScorePedals() []Out {
 	var out []Out
-	for cc, d := range e.scorePedal {
-		if d {
+	for cc, down := range e.scorePedal {
+		if down {
 			out = append(out, e.scorePedalTo(cc, true)...)
+		}
+	}
+	return out
+}
+
+// liftPedals releases every pedal the program holds down.
+func (e *Engine) liftPedals() []Out {
+	var out []Out
+	for cc, down := range e.pedalDown {
+		if down {
+			out = append(out, e.pedalOut(cc, false)...)
 		}
 	}
 	return out
@@ -663,21 +680,10 @@ func (e *Engine) SetGuide(on bool)     { e.set.Guide = on }
 // while playing: the pedals they hold now come up, or go down.
 func (e *Engine) SetPedalYourself(on bool) []Out {
 	e.set.PedalYourself = on
-	var out []Out
 	if on {
-		for cc, down := range e.pedalDown {
-			if down {
-				out = append(out, e.pedalOut(cc, false)...)
-			}
-		}
-		return out
+		return e.liftPedals()
 	}
-	for cc, down := range e.scorePedal {
-		if down {
-			out = append(out, e.scorePedalTo(cc, true)...)
-		}
-	}
-	return out
+	return e.pressScorePedals()
 }
 
 // SetIgnoreRepeats plays straight through or follows the repeats, also
@@ -852,11 +858,7 @@ func (e *Engine) silence() []Out {
 	}
 	clear(e.sounding)
 	e.offs = nil
-	for cc, down := range e.pedalDown {
-		if down {
-			out = append(out, e.pedalOut(cc, false)...)
-		}
-	}
+	out = append(out, e.liftPedals()...)
 	clear(e.scorePedal)
 	return out
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -98,7 +99,7 @@ const minTextSize, maxTextSize = 70, 200
 
 var (
 	style    *gtk.CSSProvider
-	fontSize = regexp.MustCompile(`font-size: (\d+)px`)
+	fontSize = regexp.MustCompile(`font-size: \d+px`)
 )
 
 // applyStyle loads the look, or loads it again, with its text at size
@@ -111,7 +112,7 @@ func applyStyle(size int) {
 		gtk.StyleContextAddProviderForDisplay(gdk.DisplayGetDefault(), style, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 	}
 	sized := fontSize.ReplaceAllStringFunc(css, func(s string) string {
-		px, _ := strconv.Atoi(fontSize.FindStringSubmatch(s)[1])
+		px, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(s, "font-size: "), "px"))
 		return fmt.Sprintf("font-size: %.1fpx", float64(px*size)/100)
 	})
 	style.LoadFromString(fmt.Sprintf("window, tooltip { font-size: %d%%; }\n", size) + sized)

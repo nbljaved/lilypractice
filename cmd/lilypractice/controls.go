@@ -729,9 +729,12 @@ func (w *window) refresh(v practice.View, set practice.Settings) {
 		text(c.statCounts[i], fmt.Sprint(n))
 	}
 
-	for sw, on := range map[*gtk.Switch]bool{c.guide: set.Guide, c.anyOctave: set.AnyOctave, c.repeats: !set.IgnoreRepeats, c.pedalMarks: !set.PedalYourself} {
-		if sw.Active() != on {
-			sw.SetActive(on)
+	for _, s := range [...]struct {
+		sw *gtk.Switch
+		on bool
+	}{{c.guide, set.Guide}, {c.anyOctave, set.AnyOctave}, {c.repeats, !set.IgnoreRepeats}, {c.pedalMarks, !set.PedalYourself}} {
+		if s.sw.Active() != s.on {
+			s.sw.SetActive(s.on)
 		}
 	}
 	countIn := "Off"

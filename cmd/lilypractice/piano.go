@@ -177,7 +177,7 @@ func (l pianoLayout) keyAt(x, y float64) (pitch int, along float64, ok bool) {
 }
 
 func (w *window) drawPiano(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
-	v := w.s.view()
+	v := w.v
 	set := w.s.settings()
 	held := w.s.heldKeys()
 	l := w.pianoLayout(width, height)

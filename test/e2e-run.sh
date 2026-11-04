@@ -10,7 +10,6 @@ failed=0
 client=lp-e2e-$$
 # Your saved settings (e.g. a smaller keyboard) must not change the results.
 export XDG_CONFIG_HOME=$out/config
-# (FluidSynth shows its options as "name value", so match "id NAME-".)
 rm -rf "$out" && mkdir -p "$out"
 cd "$out" || exit 1
 
@@ -51,6 +50,8 @@ quit() { # sets status to the program's exit status
 
 # The metronome is on FluidSynth even with -synth none, so every run
 # gives it -audio file: no sound, only fluidsynth.wav here.
+# (FluidSynth shows its options as "name value", so pgrep matches
+# "id NAME-".)
 
 # 1. A simulated MIDI keyboard plays the right hand; the program waits for
 #    each note and plays the left hand.
@@ -85,7 +86,9 @@ quit
 check "computer keys: program exits cleanly" "$status" 0
 
 # 3. The program starts its own FluidSynth (writing fluidsynth.wav here),
-#    which makes sound and stops with the program.
+#    which makes sound and stops with the program. (The runs above wrote
+#    fluidsynth.wav too: their metronome's.)
+rm -f fluidsynth.wav
 start synth -audio file
 xdotool sleep 2
 press space

@@ -401,11 +401,7 @@ func (s *session) setUpPorts(o options) {
 	}
 	if o.synth == "auto" {
 		s.setSynthStatus("starting FluidSynth...")
-		fluid, err := s.startFluidSynth(o.audio, s.scoreOut, s.clickOut, s.keysOut)
-		if err != nil {
-			fluid = err.Error()
-		}
-		s.setSynthStatus(fluid)
+		s.setSynthStatus(s.startFluidSynth(o.audio, s.scoreOut, s.clickOut, s.keysOut))
 		return
 	}
 	notes := "none; connect score-out and keys-out yourself, e.g. in qpwgraph"
@@ -416,38 +412,34 @@ func (s *session) setUpPorts(o options) {
 		}
 	}
 	s.setSynthStatus(notes + "; metronome: starting FluidSynth...")
-	click, err := s.startFluidSynth(o.audio, s.clickOut)
-	if err != nil {
-		click = err.Error()
-	}
-	s.setSynthStatus(notes + "; metronome: " + click)
+	s.setSynthStatus(notes + "; metronome: " + s.startFluidSynth(o.audio, s.clickOut))
 }
 
 // startFluidSynth starts FluidSynth and connects these outputs to it. It
-// returns how the status shows it.
-func (s *session) startFluidSynth(audio string, outputs ...alsa.Port) (string, error) {
+// returns how the status shows it, or what went wrong.
+func (s *session) startFluidSynth(audio string, outputs ...alsa.Port) string {
 	sf, err := synth.FindSoundfont()
 	if err != nil {
-		return "", err
+		return err.Error()
 	}
 	// A name of its own, so that two lilypractices never share a synth.
 	fluid, err := synth.StartFluidSynth(sf, audio, fmt.Sprintf("%s-%d", s.name, os.Getpid()))
 	if err != nil {
-		return "", err
+		return err.Error()
 	}
 	s.statusMu.Lock()
 	s.fluid = fluid
 	s.statusMu.Unlock()
 	for i := 0; !slices.Contains(s.seq.Clients(), fluid.Client); i++ {
 		if fluid.Exited() || i == 50 {
-			return "", fmt.Errorf("FluidSynth did not start; try another -audio driver than %q", audio)
+			return fmt.Sprintf("FluidSynth did not start; try another -audio driver than %q", audio)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	if err := s.connectOutputs(fluid.Client, outputs...); err != nil {
-		return "", err
+		return err.Error()
 	}
-	return "FluidSynth with " + filepath.Base(sf), nil
+	return "FluidSynth with " + filepath.Base(sf)
 }
 
 // connectOutputs connects our outputs to an ALSA client.

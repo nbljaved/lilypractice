@@ -36,6 +36,8 @@ type window struct {
 	side     sidebar
 	msg      message
 
+	v practice.View // the engine's, taken once a frame for all the drawing
+
 	// These don't change once the engine is built.
 	groupPos    []float64
 	groupIDs    [][]string
@@ -186,10 +188,12 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	w.split.SetShrinkEndChild(false)
 	w.split.SetPosition(p.SidebarWidth)
 	w.split.NotifyProperty("position", func() {
-		// Not when the rest pushes the list back to make room, as larger
-		// text may: that isn't the width you chose.
-		limit, _ := w.split.ObjectProperty("max-position").(int)
-		if pos := w.split.Position(); w.sidebarShown() && pos > 0 && pos < limit && pos != w.prefs.SidebarWidth {
+		// Not at a limit, where larger text pushes the list (its least
+		// width grows, and so does the rest's): that isn't the width you
+		// chose.
+		least, _ := w.split.ObjectProperty("min-position").(int)
+		most, _ := w.split.ObjectProperty("max-position").(int)
+		if pos := w.split.Position(); w.sidebarShown() && pos > least && pos < most && pos != w.prefs.SidebarWidth {
 			w.prefs.SidebarWidth = pos
 			w.prefsChanged = true
 		}
@@ -223,7 +227,8 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	} else {
 		w.showNothingChosen()
 	}
-	w.refresh(s.view(), s.settings())
+	w.v = s.view()
+	w.refresh(w.v, s.settings())
 	w.win.Present()
 	w.dirty = true
 }
@@ -276,7 +281,9 @@ func (w *window) tick() {
 	}
 	w.checkFolder()
 
-	v := w.s.view()
+	// Ticks come before drawing in each frame, so the drawing uses this.
+	w.v = w.s.view()
+	v := w.v
 	if v.Stats.Wrong != w.wrongSeen {
 		w.wrongSeen = v.Stats.Wrong
 		w.wrongAt = now
@@ -492,7 +499,11 @@ func (w *window) setColumns(columns int) {
 // setTextSize sizes the text of everything but the score and the piano
 // (whose letters grow with it), in percent.
 func (w *window) setTextSize(size int) {
-	w.prefs.TextSize = min(max(size, minTextSize), maxTextSize)
+	size = min(max(size, minTextSize), maxTextSize)
+	if size == w.prefs.TextSize { // at a limit: restyling every widget would change nothing
+		return
+	}
+	w.prefs.TextSize = size
 	w.prefsChanged = true
 	applyStyle(w.prefs.TextSize)
 	w.timeline.SetContentHeight(timelineHeight(w.textScale()))
@@ -546,7 +557,7 @@ func (w *window) keepPlayableHand() {
 // The score.
 
 func (w *window) draw(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
-	v := w.s.view()
+	v := w.v
 	cr.SetSourceRGB(0.137, 0.137, 0.16) // shows between and around pages
 	cr.Paint()
 

@@ -8,7 +8,7 @@ for you. Native (Go, GTK 4, librsvg, ALSA), for Guix.
 *A vibe-coded project, for personal use.* An AI assistant (Claude) wrote
 nearly all of it, as I asked for features and tried them out while learning
 the piano. It does what I need on my machines (Linux, with Guix), and it is
-tested (unit tests, end-to-end tests, 100 scores from Mutopia), but it is no
+tested (unit tests, end-to-end tests, 22 scores from Mutopia), but it is no
 maintained product.
 
 * What it does
@@ -345,7 +345,7 @@ to the inputs you tick instead:
 #+begin_src sh
 env -u LD_LIBRARY_PATH guix shell -m manifest.scm -- go test ./...
 test/e2e.sh      # the real program on a virtual display, without sound
-test/corpus.sh   # 100 real scores from Mutopia (about 3 minutes)
+test/corpus.sh   # 22 real scores from Mutopia (about 2 minutes)
 #+end_src
 The engine's tests engrave their pieces in =testdata= with LilyPond (kept in
 the temporary folder until they change). The end-to-end tests use their own
@@ -353,15 +353,19 @@ ALSA client name, so a lilypractice you have open is not disturbed.
 
 *Corpus*: =out/bin/lpfetch= downloaded 100 keyboard pieces from Mutopia into
 =testdata/mutopia= (at most three per composer, picked at random with a
-fixed seed; =index.tsv= lists their titles, composers, licences and
-sources). =test/corpus.sh= runs =lpcheck= on all of them: each must compile,
+fixed seed), and the 22 kept are those that each test something the others
+don't: an old LilyPond version, a repeat, tremolo or grace-note form, a
+pedal, several scores in a file, MIDI written apart from the printed
+music, a singer's or horn's staff, the staves' names... (=index.tsv=
+lists their titles, composers, licences and sources; run again, =lpfetch=
+would fetch the rest). =test/corpus.sh= runs =lpcheck= on all of them: each must compile,
 its notes must match its note heads and LilyPond's own MIDI (as written,
 or with repeats and tremolos played out), Listen mode must play every note
 in order, a perfect player in Wait mode must get through without a
 wrong or missed note, and every note head must be on a line of music with
-staves (which the cursor spans). 85 pass; =testdata/mutopia/known.tsv= says
-why each of the other 15 doesn't (scores LilyPond 2.26 can't compile even after
-=convert-ly=, or MIDI parts written differently from the printed music).
+staves (which the cursor spans). 18 pass; =testdata/mutopia/known.tsv= says
+why each of the other 4 doesn't (MIDI parts written differently from the
+printed music).
 Anything else is reported as NEW.
 
 * How it works

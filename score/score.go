@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -158,7 +159,19 @@ func LoadAsWritten(path string) (*Score, error) {
 	}
 	s.Repeats = uniqueRepeats(s.Repeats)
 	s.dropLooseTies()
+	s.dropEmptyStaves()
 	return &s, nil
+}
+
+// dropEmptyStaves drops the staves without notes, so that no hand is
+// given one. LilyPond makes one for a \key, \time or \set put in a
+// PianoStaff before its first \new Staff.
+func (s *Score) dropEmptyStaves() {
+	used := make(map[int]bool)
+	for _, n := range s.Notes {
+		used[n.Staff] = true
+	}
+	s.Staves = slices.DeleteFunc(s.Staves, func(st Named) bool { return !used[st.Index] })
 }
 
 // playTremolos turns each tremolo into its strikes: a one-note tremolo

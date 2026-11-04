@@ -104,3 +104,16 @@ func TestTremolosArePlayedOut(t *testing.T) {
 		t.Error("Head doesn't find the note head")
 	}
 }
+
+func TestEmptyStavesAreDropped(t *testing.T) {
+	// \new PianoStaff << \key g \major \new Staff {...} \new Staff {...} >>:
+	// the \key makes a staff of its own, before the two with the notes.
+	s := &Score{
+		Staves: []Named{{Index: 0, Group: "PianoStaff0"}, {Index: 1, Group: "PianoStaff0"}, {Index: 2, Group: "PianoStaff0"}},
+		Notes:  []Note{{ID: "n1", Staff: 1}, {ID: "n2", Staff: 2}},
+	}
+	s.dropEmptyStaves()
+	if len(s.Staves) != 2 || s.Staves[0].Index != 1 || s.Staves[1].Index != 2 {
+		t.Errorf("staves %v, want 1 and 2", s.Staves)
+	}
+}

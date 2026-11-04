@@ -21,7 +21,7 @@ func (w *window) timelineX(pos float64, width int) float64 {
 func timelineHeight(s float64) int { return int(math.Round(24 + 10*s)) }
 
 func (w *window) drawTimeline(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
-	v := w.s.view()
+	v := w.v
 	h := float64(height)
 	s := w.textScale()
 	mid := 11 + 10*s // below the bar numbers
