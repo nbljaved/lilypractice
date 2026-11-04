@@ -540,15 +540,13 @@ func (w *window) showCommandKeys() {
 		path = "~" + path[len(home):]
 	}
 	var info string
-	switch {
-	case k.m == nil:
-		info = "None."
-	case k.m.Channel > 0:
-		info = fmt.Sprintf("Notes on MIDI channel %d are commands, never music: give these keys a zone of their own on that channel. ", k.m.Channel)
-	default:
-		info = "These keys are commands on any channel; the others play. "
+	if k.m == nil || len(k.m.Bindings) == 0 {
+		info = "None. "
 	}
-	info += "Keys pressed together are joined by +. Edit them in " + path + "; changes apply at once."
+	info += "A0+A#0 C4 means A0 and A#0 together, then C4. The first step, keys you never " +
+		"play together, takes command mode on: then keys are commands, not music. A command " +
+		"ends it, except those marked ↻; so do the first step again and any key that does " +
+		"nothing. Edit them in " + path + "; changes apply at once."
 	if k.err != nil {
 		info += "\n\nProblems: " + k.err.Error()
 	}
@@ -562,11 +560,7 @@ func (w *window) showCommandKeys() {
 	}
 	var pairs [][2]string
 	for _, b := range k.m.Bindings {
-		what := b.Command
-		if cmd, ok := findCommand(b.Command); ok {
-			what = cmd.what
-		}
-		pairs = append(pairs, [2]string{b.Keys, what})
+		pairs = append(pairs, [2]string{b.Keys, commandWhat(b)})
 	}
 	c.commandList.Append(keyGrid(pairs))
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"lilypractice/midikeys"
 	"lilypractice/practice"
 	"lilypractice/rsvg"
 	"lilypractice/score"
@@ -89,7 +90,9 @@ type window struct {
 	barAreaCache map[int][]rsvg.Rect
 	systemBoxes  map[int]*rsvg.Rect // nil: not on the page
 	commandKeys  commandKeys
-	countInWas   int // bars of count-in before it was turned off
+	commandPath  string             // how far into a command the MIDI keyboard is; "" if not
+	commandNext  []midikeys.Binding // what its keys do now
+	countInWas   int                // bars of count-in before it was turned off
 
 	// The mouse.
 	pan                panState
@@ -285,8 +288,14 @@ func (w *window) tick() {
 	w.v = w.s.view()
 	v := w.v
 	if v.Stats.Wrong != w.wrongSeen {
+		if v.Stats.Wrong > w.wrongSeen { // not when a wrong key is taken back
+			w.wrongAt = now
+		}
 		w.wrongSeen = v.Stats.Wrong
-		w.wrongAt = now
+		w.dirty = true
+	}
+	if path, next := w.s.commandMode(); path != w.commandPath {
+		w.commandPath, w.commandNext = path, next
 		w.dirty = true
 	}
 	if v.Playing != w.wasPlaying { // one more frame after stopping or finishing
@@ -597,6 +606,9 @@ func (w *window) draw(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) 
 
 	if v.CountingIn && v.BeatsLeft > 0 {
 		w.drawCountdown(cr, v.BeatsLeft, width, height)
+	}
+	if w.commandPath != "" {
+		w.drawCommandMode(cr, width, height)
 	}
 }
 

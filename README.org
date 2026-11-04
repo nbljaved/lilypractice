@@ -29,8 +29,8 @@ maintained product.
   changes; several scores in one file; hidden notes; transposing
   instruments.
 - Plays with a MIDI keyboard, the computer keyboard (two rows like a
-  piano) or the mouse on the piano on screen. Keys of a MIDI keyboard can
-  be commands (play, back a bar, faster...).
+  piano) or the mouse on the piano on screen. Sequences of keys on a MIDI
+  keyboard run commands (play, back a bar, faster...).
 - Sounds through FluidSynth, started for you, or any ALSA synth (Pianoteq,
   a hardware module...); the metronome always through FluidSynth.
 
@@ -242,49 +242,65 @@ whichever staff it is on.
   =aplaymidi -p lilypractice:0 file.mid=.
 
 * MIDI command keys
-Some keys of your MIDI keyboard can be commands: play, back a bar, faster,
-and so on. Give them a zone of their own on MIDI channel 16 (on the SL88,
-e.g. A0–E1); notes on that channel then never sound or count as notes.
-lilypractice writes this default to =~/.config/lilypractice/commands.json=:
+A MIDI keyboard can run commands (play, back a bar, faster...) without
+giving up any keys, as Emacs does with its key sequences: hold A0 and A♯0
+together (keys you never play together) and command mode is on; then C4
+plays or stops. lilypractice writes this default to
+=~/.config/lilypractice/commands.json=:
 
-| Key   | Does            | Key   | Does              |
-|-------+-----------------+-------+-------------------|
-| A0    | back a bar      | A♯0   | next mode         |
-| B0    | play / stop     | C♯1   | next hand         |
-| C1    | forward a bar   | D♯1   | metronome         |
-| D1    | slower          | A0+C1 | back to the start |
-| E1    | faster          | D1+E1 | loop on / off     |
+| Keys           | Does              | Keys      | Does               |
+|----------------+-------------------+-----------+--------------------|
+| A0+A#0 A3      | back to the start | A0+A#0 F4 | tempo −5% ↻        |
+| A0+A#0 B3      | back a bar ↻      | A0+A#0 G4 | tempo +5% ↻        |
+| A0+A#0 C4      | play / stop       | A0+A#0 A4 | metronome on / off |
+| A0+A#0 D4      | forward a bar ↻   | A0+A#0 B4 | next hand ↻        |
+| A0+A#0 E4      | loop on / off     | A0+A#0 C5 | next mode ↻        |
+| A0+A#0 Sustain | play / stop       |           |                    |
 
 #+begin_src json
 {
-  "Channel": 16,
   "Keys": {
-    "A0": "bar-back",
-    "A0+C1": "start",
+    "A0+A#0 C4": "play-stop",
+    "A0+A#0 Sustain": "play-stop",
     ...
-  }
+  },
+  "Stay": ["bar-back", "bar-forward", "note-back", "note-forward",
+           "slower", "faster", "next-hand", "next-mode"]
 }
 #+end_src
 
-- Keys are written =A0=, =C#1= (or =C♯1=), =Bb0= (or =B♭0=), or as MIDI note
-  numbers; keys held together are joined by =+=. A key that is part of a
-  combination acts when you let it go, so that holding it for the
-  combination doesn't also run it; other keys act when they go down.
-- =Channel= 0 means any channel: then only the keys named are commands, and
-  the rest play. That suits a keyboard without zones, giving up a few keys.
+- Each entry is a sequence of steps separated by spaces. A step is a key
+  (=A0=, =C#1= or =C♯1=, =Bb0= or =B♭0=, or a MIDI note number), a pedal
+  (=Sustain=, =Sostenuto=, =Soft=), or several held together, joined by
+  =+=. Sequences can be longer than two steps, and start differently:
+  =Sustain+C8 C4= is the sustain pedal held with C8, then C4.
+- The first step is music until it is complete: A0 sounds and, while the
+  music plays, counts as a wrong note; when A♯0 joins it, lilypractice
+  takes that back. Notes held in the other hand don't get in the way.
+- In command mode, the keys are commands and never music. A panel over
+  the score lists what they do, and the piano on screen marks them. A
+  command ends command mode, except those in =Stay= (marked ↻): press
+  their key again to run them again. The first step again ends it too,
+  and so does any key that does nothing.
+- Keys held together act when the last of them goes down. A key that is
+  also part of keys held together acts when you let it go, so that
+  holding it for them doesn't also run it; other keys act when they go
+  down. A pedal held down counts as a key held: =Sustain+D4= needs it.
 - Edit the file while lilypractice runs: it reads it again at once. The
   keys panel (keyboard icon in the header) lists the keys and any problem
-  with the file.
+  with the file; an unknown field (such as =Channel=, from the old
+  format) is a problem.
 - Commands: =play-stop=, =start=, =bar-back=, =bar-forward=, =note-back=,
   =note-forward=, =slower=, =faster=, =metronome=, =count-in=, =loop=,
   =guide=, =next-mode=, =wait-mode=, =play-mode=, =listen-mode=,
   =next-hand=, =right-hand=, =left-hand=, =both-hands=, =pages=.
 
-*With midi-keys and xremap* (MIDI → uinput → xremap): lilypractice reads
-the zone itself, so keep xremap's MIDI-key rules away from it, or each key
-does two things (B0 would both play and, through xremap, press Up:
-faster). Add this to each =midi-keys= entry in =xremap.yaml= (its window
-class is =lilypractice=):
+*With midi-keys and xremap* (MIDI → uinput → xremap): a zone of keys
+for xremap reaches lilypractice twice. Its notes come as music: start
+lilypractice with =-channel 1= (the channel you play on) to ignore them.
+And the computer keys xremap makes of them work as lilypractice's own
+shortcuts (B0 pressing Up: faster); to keep them out, add this to each
+=midi-keys= entry in =xremap.yaml= (the window class is =lilypractice=):
 #+begin_src yaml
     application:
       not: [lilypractice]
@@ -333,9 +349,6 @@ to the inputs you tick instead:
    on FluidSynth already.
 
 * Other commands
-- =out/bin/lpfetch [-n 100] [-per 3]= :: download keyboard pieces from Mutopia
-  into =testdata/mutopia= (the listing pages are kept, so a second run
-  fetches only what is missing).
 - =out/bin/lpcheck piece.ly...= :: compile and check that the SVG note
   heads, the JSON note list and LilyPond's own MIDI output agree.
 - =out/bin/lprender -o page.png piece.ly 0 5= :: write a page as PNG with
@@ -351,16 +364,16 @@ The engine's tests engrave their pieces in =testdata= with LilyPond (kept in
 the temporary folder until they change). The end-to-end tests use their own
 ALSA client name, so a lilypractice you have open is not disturbed.
 
-*Corpus*: =out/bin/lpfetch= downloaded 100 keyboard pieces from Mutopia into
-=testdata/mutopia= (at most three per composer, picked at random with a
-fixed seed), and the 22 kept are those that each test something the others
-don't: an old LilyPond version, a repeat, tremolo or grace-note form, a
-pedal, several scores in a file, MIDI written apart from the printed
-music, a singer's or horn's staff, the staves' names... (=index.tsv=
-lists their titles, composers, licences and sources; run again, =lpfetch=
-would fetch the rest). =test/corpus.sh= runs =lpcheck= on all of them: each must compile,
-its notes must match its note heads and LilyPond's own MIDI (as written,
-or with repeats and tremolos played out), Listen mode must play every note
+*Corpus*: 100 keyboard pieces from Mutopia (at most three per composer,
+picked at random with a fixed seed) were tried, and the 22 kept in
+=testdata/mutopia= are those that each test something the others don't:
+an old LilyPond version, a repeat, tremolo or grace-note form, a pedal,
+several scores in a file, MIDI written apart from the printed music, a
+singer's or horn's staff, the staves' names... (=index.tsv= lists their
+titles, composers, licences and sources). =test/corpus.sh= runs =lpcheck=
+on all of them: each must compile, its notes must match its note heads
+and LilyPond's own MIDI (as written, or with repeats and tremolos played
+out), Listen mode must play every note
 in order, a perfect player in Wait mode must get through without a
 wrong or missed note, and every note head must be on a line of music with
 staves (which the cursor spans). 18 pass; =testdata/mutopia/known.tsv= says
@@ -381,7 +394,7 @@ picture by its id.
 | =lilypond/= | the LilyPond plugin, and the code that runs LilyPond     |
 | =score/=    | reads the JSON note list; repeats, tremolos              |
 | =practice/= | the practice engine: timing, modes, scoring, loop        |
-| =midikeys/= | MIDI keys as commands: single keys and combinations      |
+| =midikeys/= | MIDI keys and pedals as commands: sequences of steps     |
 | =alsa/=     | small ALSA sequencer binding                             |
 | =synth/=    | starts FluidSynth                                        |
 | =rsvg/=     | small librsvg binding: draw, find and recolour notes     |
@@ -392,9 +405,8 @@ picture by its id.
 
 * Licence
 lilypractice is free software: you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option)
-any later version. See =LICENSE=.
+under the terms of version 3 of the GNU General Public License, as
+published by the Free Software Foundation. See =LICENSE=.
 
 The GPL doesn't cover the scores from the Mutopia Project:
 =testdata/bach-invention-01.ly=, =testdata/fur-elise.ly= and those in

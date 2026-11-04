@@ -37,7 +37,7 @@ type session struct {
 	held        map[int]heldKey // keys down now and how they were judged
 	pedal       bool            // your sustain pedal is down
 	detect      detection
-	commandKeys *midikeys.Map     // keys of the MIDI keyboard that are commands
+	commandKeys *midikeys.Map     // the MIDI keyboard's commands
 	onCommand   func(name string) // runs a command, from any goroutine
 	midiPlayed  bool              // a MIDI keyboard has played a note
 
@@ -227,32 +227,67 @@ func (s *session) replaceEngine(eng *practice.Engine) {
 	s.mu.Unlock()
 }
 
-// setCommandKeys sets which MIDI keys are commands, and what runs them.
+// setCommandKeys sets the MIDI keyboard's commands, and what runs them.
 func (s *session) setCommandKeys(m *midikeys.Map, run func(name string)) {
 	s.mu.Lock()
 	s.commandKeys, s.onCommand = m, run
 	s.mu.Unlock()
 }
 
-// commandKey runs the command of a MIDI key, if it is a command key, and
-// reports whether it was one.
-func (s *session) commandKey(channel, pitch int, down bool) bool {
+// commandKey gives a key or pedal of the MIDI keyboard (as midikeys
+// numbers them) to the commands, runs the command it completes, if any,
+// and reports whether it is the commands' rather than music.
+func (s *session) commandKey(key int, down bool) bool {
 	s.mu.Lock()
 	m, run := s.commandKeys, s.onCommand
-	var command string
-	owned := false
+	var r midikeys.Result
 	if m != nil {
 		if down {
-			command, owned = m.Press(channel, pitch)
+			r = m.Down(key)
 		} else {
-			command, owned = m.Release(channel, pitch)
+			r = m.Up(key)
 		}
+		s.forgive(r.Mistaken)
 	}
 	s.mu.Unlock()
-	if command != "" && run != nil {
-		run(command)
+	if r.Command != "" && run != nil {
+		run(r.Command)
 	}
-	return owned
+	return r.Owned
+}
+
+// forgive takes back the judging of keys that were played as notes but
+// were keys for a command: the score counts go back to what they were
+// before the first of them. Called with mu held.
+func (s *session) forgive(keys []int) {
+	var before *practice.Stats
+	for _, k := range keys {
+		h, ok := s.held[k]
+		if !ok || h.result == practice.Ignored {
+			continue
+		}
+		if before == nil || judged(h.before) < judged(*before) {
+			before = &h.before
+		}
+		h.result = practice.Ignored
+		s.held[k] = h
+	}
+	if before != nil {
+		s.eng.SetStats(*before)
+	}
+}
+
+func judged(s practice.Stats) int { return s.Perfect + s.Good + s.Missed + s.Wrong }
+
+// commandMode says how far into a command the MIDI keyboard is, as
+// "A0+A♯0", and what its keys do now; "" outside command mode.
+func (s *session) commandMode() (path string, next []midikeys.Binding) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m := s.commandKeys; m != nil && m.Active() {
+		return m.Path(), m.Next()
+	}
+	return "", nil
 }
 
 // playedMIDI reports whether a MIDI keyboard has played a note.
@@ -289,8 +324,9 @@ func (s *session) key(pitch int, down bool, src practice.Source) {
 			delete(s.held, pitch)
 			return nil
 		}
+		before := s.eng.Stats()
 		out, result := s.eng.NoteOn(now, pitch, src)
-		s.held[pitch] = heldKey{result, s.eng.LastHand()}
+		s.held[pitch] = heldKey{result, s.eng.LastHand(), before}
 		return out
 	})
 }
@@ -337,8 +373,8 @@ func (s *session) runTiming() {
 	}
 }
 
-// runMIDIInput handles notes arriving at keyboard-in: the keys of a
-// keyboard detection, command keys, and notes you play.
+// runMIDIInput handles notes and pedals arriving at keyboard-in: the keys
+// of a keyboard detection, keys for commands, and music.
 func (s *session) runMIDIInput() {
 	for {
 		ev, err := s.seq.Receive()
@@ -349,18 +385,22 @@ func (s *session) runMIDIInput() {
 		if ev.Port != s.keyboardIn {
 			continue
 		}
+		if s.inChannel >= 0 && ev.Channel != s.inChannel {
+			continue
+		}
 		switch ev.Kind {
 		case alsa.NoteOn:
-			if s.detectKey(ev.A) || s.commandKey(ev.Channel, ev.A, true) {
+			if s.detectKey(ev.A) || s.commandKey(ev.A, true) {
 				continue
 			}
 		case alsa.NoteOff:
-			if s.commandKey(ev.Channel, ev.A, false) {
+			if s.commandKey(ev.A, false) {
 				continue
 			}
-		}
-		if s.inChannel >= 0 && ev.Channel != s.inChannel {
-			continue
+		case alsa.Controller:
+			if key, ok := midikeys.PedalKey(ev.A); ok && s.commandKey(key, ev.B >= 64) {
+				continue
+			}
 		}
 		switch ev.Kind {
 		case alsa.NoteOn:
@@ -483,4 +523,5 @@ func (s *session) close() {
 type heldKey struct {
 	result practice.Result
 	hand   practice.Hand
+	before practice.Stats // the score counts before it was judged
 }

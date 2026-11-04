@@ -1,17 +1,22 @@
-// Package midikeys turns keys of a MIDI keyboard into commands, such as
-// play, back a bar or faster: single keys, and keys held together.
+// Package midikeys turns keys and pedals of a MIDI keyboard into commands,
+// such as play, back a bar or faster, without giving up any keys for
+// them. Commands are sequences of steps, as in Emacs: "A0+A#0 C4" is A0
+// and A#0 held together, then C4. The first step is keys you never play
+// together; it takes command mode on, and while it is on the keys are
+// commands, never music.
 //
-// The keys are usually a zone of their own (on the SL88, A0–E1 sent on
-// channel 16), so that they never sound or count as notes. A keyboard
-// without zones can give up some keys instead: with channel 0, the keys
-// named are commands on any channel and the others play as usual.
+// A step is one key or pedal, or several held together. Keys held
+// together act when the last of them goes down. A key that is also part
+// of such a step acts alone when you let it go, so that holding it for
+// the step doesn't also run it; other keys act when they go down.
 //
-// A key that is also part of keys held together acts when you let it go,
-// so that holding it for a combination doesn't run it too. Other keys act
-// when they go down.
+// A command ends command mode, unless it is one that stays (such as
+// bar-back: press its key again to go back another bar). The first step
+// again ends it too, and so does a key that does nothing.
 package midikeys
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,182 +29,398 @@ import (
 	"unicode/utf8"
 )
 
-// Config is what the commands file holds.
-type Config struct {
-	// Channel is the MIDI channel (1–16) of the command keys: all its
-	// notes are commands, never played. 0 means any channel, and then
-	// only the keys named are commands.
-	Channel int
-	// Keys maps a key ("A0", "C#1", "Bb0" or a MIDI note number like
-	// "21") or keys held together ("A0+C1") to a command.
-	Keys map[string]string
+// Keys are MIDI note numbers (0–127), or a pedal: Pedal plus its
+// controller number (see PedalKey).
+const Pedal = 128
+
+var pedalNames = map[int]string{64: "Sustain", 66: "Sostenuto", 67: "Soft"}
+
+// PedalKey is the key of a pedal, from its controller number: 64 sustain,
+// 66 sostenuto, 67 soft. ok is false for other controllers.
+func PedalKey(controller int) (key int, ok bool) {
+	_, ok = pedalNames[controller]
+	return Pedal + controller, ok
 }
 
-// Default is the file written when there is none: the white and black
-// keys from A0 to E1.
+// Config is what the commands file holds.
+type Config struct {
+	// Keys maps a sequence of steps, separated by spaces, to a command.
+	// A step is a key ("A0", "C#1", "Bb0" or a MIDI note number like
+	// "21"), a pedal ("Sustain", "Sostenuto", "Soft"), or several held
+	// together, joined by + ("A0+A#0", "Sustain+C8").
+	Keys map[string]string
+	// Stay lists the commands that keep command mode on.
+	Stay []string
+}
+
+// Default is the file written when there is none: A0 and A#0 together,
+// then a white key around middle C, or the sustain pedal.
 const Default = `{
-  "Channel": 16,
   "Keys": {
-    "A0": "bar-back",
-    "A#0": "next-mode",
-    "B0": "play-stop",
-    "C1": "bar-forward",
-    "C#1": "next-hand",
-    "D1": "slower",
-    "D#1": "metronome",
-    "E1": "faster",
-    "A0+C1": "start",
-    "D1+E1": "loop"
-  }
+    "A0+A#0 A3": "start",
+    "A0+A#0 B3": "bar-back",
+    "A0+A#0 C4": "play-stop",
+    "A0+A#0 D4": "bar-forward",
+    "A0+A#0 E4": "loop",
+    "A0+A#0 F4": "slower",
+    "A0+A#0 G4": "faster",
+    "A0+A#0 A4": "metronome",
+    "A0+A#0 B4": "next-hand",
+    "A0+A#0 C5": "next-mode",
+    "A0+A#0 Sustain": "play-stop"
+  },
+  "Stay": ["bar-back", "bar-forward", "note-back", "note-forward",
+           "slower", "faster", "next-hand", "next-mode"]
 }
 `
+
+// Leave is the Command, in Next, of the step that ends command mode.
+const Leave = "leave"
 
 // Binding is one entry of the file, for showing.
 type Binding struct {
 	Keys    string // as written
 	Command string
-	pitches []int
+	Stay    bool // the command keeps command mode on
+	steps   [][]int
 }
 
-// Map follows the command keys going down and up and says which command
-// to run. It is not safe for concurrent use.
+// Step is the keys of the binding's last step.
+func (b Binding) Step() []int { return b.steps[len(b.steps)-1] }
+
+// Result says what a key going down or up does.
+type Result struct {
+	Command string // the command to run now, or ""
+	Owned   bool   // the key is the commands', not music
+	// Mistaken holds the keys of a first step that were taken for music:
+	// they went down before the step was complete.
+	Mistaken []int
+}
+
+// Map follows the keys and pedals going down and up and says which
+// command to run. It is not safe for concurrent use.
 type Map struct {
-	Channel  int // as in Config
 	Bindings []Binding
 
-	single  map[int]string
-	chords  map[string]string // pitches in order, e.g. "21+24"
-	inChord map[int]bool
-	held    map[int]bool // command keys down -> they have done their part
+	stay map[string]bool
+	root *level // the first steps
+	at   *level // the steps that can come next: root outside command mode
+	path []*step
+	held map[int]*heldKey
+}
+
+// level is the steps that can come at one point of a sequence.
+type level struct {
+	steps   map[string]*step // by stepName
+	keys    map[int]bool     // the keys of all of them
+	inChord map[int]bool     // the keys of steps of several keys
+}
+
+type step struct {
+	keys    []int
+	command string // what it runs; "" if it leads on, or leaves
+	next    *level // where it leads, if anywhere
+	leave   bool   // it ends command mode
+}
+
+type heldKey struct {
+	owned   bool // it went down as one of the commands' keys
+	waiting bool // it acts alone when it goes up
+}
+
+func newLevel() *level {
+	return &level{steps: make(map[string]*step), keys: make(map[int]bool), inChord: make(map[int]bool)}
+}
+
+func (lv *level) add(st *step) {
+	lv.steps[stepName(st.keys)] = st
+	for _, k := range st.keys {
+		lv.keys[k] = true
+		if len(st.keys) > 1 {
+			lv.inChord[k] = true
+		}
+	}
+}
+
+// addLeave lets keys end command mode here and in every level after,
+// unless they already do something.
+func (lv *level) addLeave(keys []int) {
+	if _, ok := lv.steps[stepName(keys)]; !ok {
+		lv.add(&step{keys: keys, leave: true})
+	}
+	for _, st := range lv.steps {
+		if st.next != nil {
+			st.next.addLeave(keys)
+		}
+	}
+}
+
+func stepName(keys []int) string {
+	var s []string
+	for _, k := range keys {
+		s = append(s, strconv.Itoa(k))
+	}
+	return strings.Join(s, "+")
 }
 
 // New checks a Config. known says whether a command exists; every problem
 // found is reported, and the Map holds the entries that were fine.
 func New(c Config, known func(string) bool) (*Map, error) {
-	m := &Map{
-		Channel: c.Channel,
-		single:  make(map[int]string),
-		chords:  make(map[string]string),
-		inChord: make(map[int]bool),
-		held:    make(map[int]bool),
-	}
+	m := &Map{stay: make(map[string]bool), root: newLevel(), held: make(map[int]*heldKey)}
+	m.at = m.root
 	var errs []error
-	if c.Channel < 0 || c.Channel > 16 {
-		errs = append(errs, fmt.Errorf("channel %d: want 1 to 16, or 0 for any", c.Channel))
-		m.Channel = 0
+	for _, command := range c.Stay {
+		if !known(command) {
+			errs = append(errs, fmt.Errorf("Stay: no command %q", command))
+			continue
+		}
+		m.stay[command] = true
 	}
-	for keys, command := range c.Keys {
+	// In order, so that a problem is reported the same way every time.
+	for _, keys := range slices.Sorted(maps.Keys(c.Keys)) {
+		command := c.Keys[keys]
 		if !known(command) {
 			errs = append(errs, fmt.Errorf("%s: no command %q", keys, command))
 			continue
 		}
-		var pitches []int
-		for _, k := range strings.Split(keys, "+") {
-			p, err := ParseNote(k)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", keys, err))
-				pitches = nil
-				break
-			}
-			pitches = append(pitches, p)
+		steps, err := parseSequence(keys)
+		if err == nil {
+			err = m.add(steps, command)
 		}
-		if pitches == nil {
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", keys, err))
 			continue
 		}
-		slices.Sort(pitches)
-		pitches = slices.Compact(pitches)
-		if len(pitches) == 1 {
-			m.single[pitches[0]] = command
-		} else {
-			m.chords[chordName(pitches)] = command
-			for _, p := range pitches {
-				m.inChord[p] = true
-			}
-		}
-		m.Bindings = append(m.Bindings, Binding{keys, command, pitches})
+		m.Bindings = append(m.Bindings, Binding{keys, command, m.stay[command], steps})
 	}
-	slices.SortFunc(m.Bindings, func(a, b Binding) int {
-		if len(a.pitches) != len(b.pitches) {
-			return len(a.pitches) - len(b.pitches) // single keys first
+	for _, first := range m.root.steps {
+		if first.next != nil {
+			first.next.addLeave(first.keys)
 		}
-		return slices.Compare(a.pitches, b.pitches)
-	})
+	}
+	sortBindings(m.Bindings)
 	return m, errors.Join(errs...)
 }
 
-func chordName(pitches []int) string {
-	var s []string
-	for _, p := range pitches {
-		s = append(s, strconv.Itoa(p))
+func parseSequence(s string) ([][]int, error) {
+	var steps [][]int
+	for _, field := range strings.Fields(s) {
+		var keys []int
+		for _, k := range strings.Split(field, "+") {
+			key, err := ParseKey(k)
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		steps = append(steps, slices.Compact(keys))
 	}
-	return strings.Join(s, "+")
+	if steps == nil {
+		return nil, errors.New("no keys")
+	}
+	return steps, nil
 }
 
-// Owns reports whether a note is a command key. channel counts from 0.
-func (m *Map) Owns(channel, pitch int) bool {
-	if m.Channel > 0 {
-		return channel == m.Channel-1
+// add puts a sequence in the tree of steps.
+func (m *Map) add(steps [][]int, command string) error {
+	lv := m.root
+	for i, keys := range steps {
+		last := i == len(steps)-1
+		st := lv.steps[stepName(keys)]
+		switch {
+		case st == nil:
+			st = &step{keys: keys}
+			if last {
+				st.command = command
+			} else {
+				st.next = newLevel()
+			}
+			lv.add(st)
+		case last && st.next != nil:
+			return errors.New("longer sequences start with these keys")
+		case last:
+			return errors.New("the same keys as another entry")
+		case st.next == nil:
+			return fmt.Errorf("%s runs a command already", sequenceName(steps[:i+1]))
+		}
+		lv = st.next
 	}
-	_, ok := m.single[pitch]
-	return ok || m.inChord[pitch]
+	return nil
 }
 
-// Press is a key going down. It says whether the key is a command key,
-// and the command to run now, if any.
-func (m *Map) Press(channel, pitch int) (command string, owned bool) {
-	if !m.Owns(channel, pitch) {
-		return "", false
-	}
-	if len(m.held) > 0 {
-		// Keys held while another goes down were held for a combination.
-		for p := range m.held {
-			m.held[p] = true
-		}
-		m.held[pitch] = true
-		if c, ok := m.chords[chordName(slices.Sorted(maps.Keys(m.held)))]; ok {
-			return c, true
-		}
-		if m.inChord[pitch] {
-			return "", true
-		}
-		return m.single[pitch], true
-	}
-	if m.inChord[pitch] {
-		m.held[pitch] = false // its own command waits until it goes up
-		return "", true
-	}
-	m.held[pitch] = true
-	return m.single[pitch], true
+func sortBindings(b []Binding) {
+	slices.SortFunc(b, func(x, y Binding) int {
+		return slices.CompareFunc(x.steps, y.steps, slices.Compare)
+	})
 }
 
-// Release is a key going up: a key that waited runs its command now, if
-// it wasn't used in a combination.
-func (m *Map) Release(channel, pitch int) (command string, owned bool) {
-	if !m.Owns(channel, pitch) {
-		return "", false
+// Active reports whether command mode is on.
+func (m *Map) Active() bool { return m.at != m.root }
+
+// Path is the steps of command mode so far, such as "A0+A♯0"; "" when
+// it is off.
+func (m *Map) Path() string {
+	var steps [][]int
+	for _, st := range m.path {
+		steps = append(steps, st.keys)
 	}
-	used, down := m.held[pitch]
-	delete(m.held, pitch)
-	if down && !used {
-		return m.single[pitch], true
+	return sequenceName(steps)
+}
+
+// Next lists the steps that can come next in command mode, as Bindings of
+// one step each; nil when it is off. Command is "" for a step that leads
+// to further steps, and Leave for one that ends command mode.
+func (m *Map) Next() []Binding {
+	if !m.Active() {
+		return nil
 	}
-	return "", true
+	var next []Binding
+	for _, st := range m.at.steps {
+		b := Binding{KeysName(st.keys), st.command, m.stay[st.command], [][]int{st.keys}}
+		if st.leave {
+			b.Command, b.Stay = Leave, false
+		}
+		next = append(next, b)
+	}
+	sortBindings(next)
+	return next
+}
+
+// Down is a key or pedal going down.
+func (m *Map) Down(key int) Result {
+	if h, ok := m.held[key]; ok {
+		return Result{Owned: h.owned} // a pedal's position, again
+	}
+	// Keys held already were held for this one: none acts alone now.
+	for _, o := range m.held {
+		o.waiting = false
+	}
+	h := &heldKey{owned: m.Active()}
+	m.held[key] = h
+	lv := m.at
+	if !lv.keys[key] {
+		return m.nothing(h)
+	}
+	// Keys no step here uses, such as notes being played, don't count.
+	var together []int
+	for k := range m.held {
+		if lv.keys[k] {
+			together = append(together, k)
+		}
+	}
+	if len(together) > 1 {
+		slices.Sort(together)
+		if st, ok := lv.steps[stepName(together)]; ok {
+			return m.take(st, key, true, h)
+		}
+	}
+	if lv.inChord[key] {
+		h.waiting = len(together) == 1
+		return Result{Owned: h.owned}
+	}
+	if st, ok := lv.steps[stepName([]int{key})]; ok {
+		return m.take(st, key, true, h)
+	}
+	return m.nothing(h)
+}
+
+// Up is a key or pedal going up: a key that waited acts now.
+func (m *Map) Up(key int) Result {
+	h, ok := m.held[key]
+	if !ok {
+		return Result{}
+	}
+	delete(m.held, key)
+	if !h.waiting {
+		return Result{Owned: h.owned}
+	}
+	if st, ok := m.at.steps[stepName([]int{key})]; ok {
+		return m.take(st, key, false, h)
+	}
+	return m.nothing(h)
+}
+
+// nothing is a key that does nothing: in command mode, that ends it.
+func (m *Map) nothing(h *heldKey) Result {
+	m.leaveIf(h.owned)
+	return Result{Owned: h.owned}
+}
+
+// take does a step, completed by key going down or up.
+func (m *Map) take(st *step, key int, down bool, h *heldKey) Result {
+	for _, o := range m.held {
+		o.waiting = false
+	}
+	r := Result{Command: st.command, Owned: h.owned}
+	if !m.Active() {
+		// The keys before were taken for music; the last is ours.
+		for _, k := range st.keys {
+			if down && k == key {
+				h.owned, r.Owned = true, true
+			} else {
+				r.Mistaken = append(r.Mistaken, k)
+			}
+		}
+	}
+	switch {
+	case st.next != nil:
+		m.at = st.next
+		m.path = append(m.path, st)
+	default:
+		m.leaveIf(st.leave || !m.stay[st.command])
+	}
+	return r
+}
+
+func (m *Map) leaveIf(leave bool) {
+	if leave {
+		m.at, m.path = m.root, nil
+	}
 }
 
 var noteBase = map[rune]int{'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 
-// ParseNote reads a note name in scientific pitch (C4 is middle C, MIDI
-// note 60), with # or ♯ for sharp and b or ♭ for flat, or a MIDI note
-// number.
-func ParseNote(s string) (int, error) {
+var noteNames = [12]string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}
+
+// KeysName writes keys held together, as in "A0+A♯0".
+func KeysName(keys []int) string {
+	var s []string
+	for _, k := range keys {
+		if k >= Pedal {
+			s = append(s, pedalNames[k-Pedal])
+		} else {
+			s = append(s, fmt.Sprintf("%s%d", noteNames[k%12], k/12-1))
+		}
+	}
+	return strings.Join(s, "+")
+}
+
+func sequenceName(steps [][]int) string {
+	var s []string
+	for _, keys := range steps {
+		s = append(s, KeysName(keys))
+	}
+	return strings.Join(s, " ")
+}
+
+// ParseKey reads a key: a note name in scientific pitch (C4 is middle C,
+// MIDI note 60), with # or ♯ for sharp and b or ♭ for flat; a MIDI note
+// number; or a pedal: Sustain, Sostenuto or Soft.
+func ParseKey(s string) (int, error) {
 	s = strings.TrimSpace(s)
+	for cc, name := range pedalNames {
+		if strings.EqualFold(s, name) {
+			return Pedal + cc, nil
+		}
+	}
 	if n, err := strconv.Atoi(s); err == nil {
 		if n < 0 || n > 127 {
 			return 0, fmt.Errorf("note %d: want 0 to 127", n)
 		}
 		return n, nil
 	}
-	bad := fmt.Errorf("%q: want a note like A0, C#1 or Bb0, or a MIDI note number", s)
+	bad := fmt.Errorf("%q: want a note like A0, C#1 or Bb0, a MIDI note number, or Sustain, Sostenuto or Soft", s)
 	letter, size := utf8.DecodeRuneInString(strings.ToUpper(s))
 	base, ok := noteBase[letter]
 	if !ok {
@@ -246,8 +467,12 @@ func Load(path string) (Config, error) {
 	} else if err != nil {
 		return Config{}, err
 	}
+	// Unknown fields are an error, so that a misspelt one (or the
+	// Channel of the old format) is reported rather than ignored.
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
 	var c Config
-	if err := json.Unmarshal(b, &c); err != nil {
+	if err := d.Decode(&c); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return c, nil

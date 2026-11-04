@@ -101,33 +101,42 @@ check "FluidSynth: stopped with the program" "$(pgrep -c -f "alsa_seq.id $client
 peak=$(od -A n -t d2 -j 44 fluidsynth.wav | tr -s ' ' '\n' | tr -d - | sort -n | tail -1)
 check "FluidSynth: the recording has sound" "$([ "${peak:-0}" -gt 1000 ] && echo yes)" yes
 
-# 4. MIDI command keys, on channel 16 as the default commands.json has
-#    them: C1 twice moves two bars on and B0 plays from there; A0 and C1
-#    together go back to the start. They never sound, even with -thru.
-zone() { # keys held together on channel 16, as hex note numbers
-	for n; do aseqsend -p "$client:0" "9F $n 40"; done
+# 4. Commands from the MIDI keyboard, as the default commands.json has
+#    them: A0+A#0 takes command mode on, D4 twice moves two bars on (it
+#    stays in command mode) and C4 plays from there; the sustain pedal
+#    stops, A3 goes back to the start. With -thru, only A0 sounds: until
+#    A#0 joins it, it is music.
+keys() { # keys held together, as hex note numbers
+	for n; do aseqsend -p "$client:0" "90 $n 40"; done
 	xdotool sleep 0.1
-	for n; do aseqsend -p "$client:0" "8F $n 00"; done
+	for n; do aseqsend -p "$client:0" "80 $n 00"; done
+	xdotool sleep 0.3
+}
+pedal() {
+	aseqsend -p "$client:0" "B0 40 7F"
+	xdotool sleep 0.1
+	aseqsend -p "$client:0" "B0 40 00"
 	xdotool sleep 0.3
 }
 start commands -synth none -audio file -mode listen -thru
 xdotool sleep 1
 aseqdump -p "$client:1,$client:3" >commands1.sent 2>&1 &
 dump=$!
-zone 18; zone 18; zone 17 # C1, C1, B0
-xdotool sleep 3           # a bar of count-in (2 s), then the music
-zone 17                   # B0 again: stop
+keys 15 16; keys 3E; keys 3E; keys 3C # A0+A#0 D4 D4 C4
+xdotool sleep 3                       # a bar of count-in (2 s), then the music
+keys 15 16; pedal                     # A0+A#0 Sustain: stop
 kill $dump
 aseqdump -p "$client:1,$client:3" >commands2.sent 2>&1 &
 dump=$!
-zone 15 18; zone 17 # A0+C1, B0
+keys 15 16; keys 39; keys 15 16; keys 3C # A0+A#0 A3, A0+A#0 C4
 xdotool sleep 3
-zone 17
+keys 15 16; keys 3C
 kill $dump
 check "command keys: the default file is written" "$(ls config/lilypractice/commands.json 2>&1)" config/lilypractice/commands.json
 check "command keys: two bars on, then play (B2 first)" "$(notes commands1.sent 1 | cut -d' ' -f1)" 47
 check "command keys: back to the start (D5 first)" "$(notes commands2.sent 1 | cut -d' ' -f1)" 74
-check "command keys: never sound" "$(notes commands1.sent 3)$(notes commands2.sent 3)" ""
+check "command keys: only A0 of A0+A#0 sounds" "$(notes commands1.sent 3) $(notes commands2.sent 3)" "21 21 21 21 21"
+check "command keys: the pedal in command mode is not passed on" "$(grep "controller 64" commands1.sent | awk '$1 ~ /:3$/' | wc -l)" 0
 quit
 check "command keys: program exits cleanly" "$status" 0
 

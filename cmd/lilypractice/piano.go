@@ -6,6 +6,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"lilypractice/midikeys"
 	"lilypractice/practice"
 )
 
@@ -199,6 +200,13 @@ func (w *window) drawPiano(_ *gtk.DrawingArea, cr *cairo.Context, width, height 
 				if !look[q].mark {
 					look[q] = keyLook{c: handColour(v.ExpectedHands[i]).shade(1.65), ring: true}
 				}
+			}
+		}
+	}
+	for _, b := range w.commandNext { // the keys that do something now
+		for _, k := range b.Step() {
+			if b.Command != midikeys.Leave && k < midikeys.Pedal {
+				look[k] = keyLook{c: commandColour}
 			}
 		}
 	}

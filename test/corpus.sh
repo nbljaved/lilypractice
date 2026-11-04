@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks lilypractice against many real scores: runs lpcheck on every piece
-# in testdata/mutopia (fetch them with out/bin/lpfetch), several at a time,
-# and sums up. Per-piece logs go to out/corpus/logs. Run from anywhere:
+# in testdata/mutopia, several at a time, and sums up. Per-piece logs go
+# to out/corpus/logs. Run from anywhere:
 #
 #	test/corpus.sh [pattern]   # only the pieces whose directory matches
 #

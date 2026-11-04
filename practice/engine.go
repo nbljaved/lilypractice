@@ -730,6 +730,13 @@ func (e *Engine) ResetStats() {
 	clear(e.missed)
 }
 
+// Stats are the score counts so far.
+func (e *Engine) Stats() Stats { return e.stats }
+
+// SetStats puts back score counts from before some keys were played,
+// when they turn out not to have been music (keys for a command).
+func (e *Engine) SetStats(s Stats) { e.stats = s }
+
 // Next is the group playback starts from, or reaches next.
 func (e *Engine) Next() int { return e.next }
 
