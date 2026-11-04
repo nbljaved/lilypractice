@@ -61,14 +61,13 @@ checkout, =run.sh= builds and starts it instead:
 #+end_src
 Installed, the command is =lilypractice=, with the same arguments. =run.sh=
 builds the program in the Guix environment from =manifest.scm= (the first
-build takes about 5 minutes) and starts it. It drops =LD_LIBRARY_PATH=: on
-this machine that points at Nix's alsa-lib, which breaks Guix programs that
-use ALSA.
+build takes about 5 minutes) and starts it.
 
 A list on the left shows the LilyPond files (=.ly=) of the folder, with the
 title and composer from their =\header=; click one to practise it. It
-keeps up as files are added or removed. F9, or the button at the top left,
-shows or hides it; drag its edge to make it wider.
+keeps up as files are added or removed. The button at its top, or Ctrl+O,
+opens another folder. F9, or the button at the top left, shows or hides
+it; drag its edge to make it wider.
 
 A score is compiled with LilyPond the first time, in the background (the
 window says so, and you can choose another meanwhile), and reused while
@@ -199,6 +198,13 @@ Hovering over the score marks, faintly, the note a click would pick, with
 its bar number. A click on a line of music picks the note nearest across,
 whichever staff it is on.
 
+*On its side*: =-rotate left= (anticlockwise) or =-rotate right= turns the
+whole window a quarter turn, for a screen held on its side: a tablet
+showing this computer's screen through Sunshine and Moonlight, say, which
+then has the score on its tall side. Menus, panels and tooltips turn with
+it; the folder dialog doesn't. The window must then be about 1150 pixels
+tall (1030 with the list of scores hidden) at the usual text size.
+
 | Key            | Does                                             |
 |----------------+--------------------------------------------------|
 | Space          | play / stop                                      |
@@ -221,6 +227,7 @@ whichever staff it is on.
 | Shift (hold)   | sustain pedal                                    |
 | Ctrl + − 0     | zoom                                             |
 | F9             | list of scores                                   |
+| Ctrl+O         | open another folder                              |
 | Ctrl+Q         | quit                                             |
 
 * Playing
@@ -356,7 +363,7 @@ to the inputs you tick instead:
 
 * Tests
 #+begin_src sh
-env -u LD_LIBRARY_PATH guix shell -m manifest.scm -- go test ./...
+guix shell -m manifest.scm -- go test ./...
 test/e2e.sh      # the real program on a virtual display, without sound
 test/corpus.sh   # 22 real scores from Mutopia (about 2 minutes)
 #+end_src
@@ -398,6 +405,7 @@ picture by its id.
 | =alsa/=     | small ALSA sequencer binding                             |
 | =synth/=    | starts FluidSynth                                        |
 | =rsvg/=     | small librsvg binding: draw, find and recolour notes     |
+| =turn/=     | shows a widget turned a quarter turn (=-rotate=)         |
 | =view/=     | draws the stacked pages with coloured notes              |
 | =cmd/=      | lilypractice and the helper commands                     |
 | =test/=     | end-to-end tests                                         |

@@ -257,7 +257,7 @@ func (w *window) showMessage(busy bool, title, detail string) {
 
 func (w *window) showNothingChosen() {
 	if len(w.side.files) == 0 {
-		w.showMessage(false, "No scores here", "There are no LilyPond files (.ly) in "+w.side.dir+".")
+		w.showMessage(false, "No scores here", "There are no LilyPond files (.ly) in "+w.side.dir+". Ctrl+O opens another folder.")
 	} else {
 		where := "in the list on the left"
 		if !w.sidebarShown() {

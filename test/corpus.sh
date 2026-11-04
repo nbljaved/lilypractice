@@ -7,7 +7,7 @@
 #
 # Needs a built lpcheck (go build -o out/bin/ ./cmd/...).
 dir=$(cd "$(dirname "$0")/.." && pwd)
-exec env -u LD_LIBRARY_PATH guix shell -m "$dir/manifest.scm" -- sh -c '
+exec guix shell -m "$dir/manifest.scm" -- sh -c '
 	dir=$1 pattern=$2
 	logs=$dir/out/corpus/logs
 	rm -rf "$logs" && mkdir -p "$logs"

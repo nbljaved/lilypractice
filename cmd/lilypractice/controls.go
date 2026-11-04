@@ -113,6 +113,7 @@ func (w *window) showScoreChoice() {
 	w.c.updating = false
 	w.scorePick.SetTooltipText("This file holds several scores (movements, or pieces of a set): the one to practise")
 	w.header.PackStart(w.scorePick)
+	w.turnAll(w.scorePick)
 }
 
 func (w *window) buildTransport() *gtk.CenterBox {
@@ -308,7 +309,7 @@ func (w *window) panel(children ...gtk.Widgetter) *gtk.Popover {
 	scroll.SetChild(box)
 	p := gtk.NewPopover()
 	p.SetChild(scroll)
-	p.ConnectShow(func() { scroll.SetMaxContentHeight(max(240, w.win.Height()-150)) })
+	p.ConnectShow(func() { scroll.SetMaxContentHeight(max(240, w.shownHeight()-150)) })
 	keys := gtk.NewEventControllerKey()
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
@@ -509,7 +510,7 @@ func (w *window) buildKeysPanel() *gtk.Popover {
 		{"PgUp PgDn", "computer keys octave"}, {"Ctrl + −", "zoom"},
 		{"z s x … /", "piano, lower row"}, {"q 2 w … ]", "piano, upper row"},
 		{"Shift", "sustain pedal"}, {"F9", "list of scores"},
-		{"Ctrl+Q", "quit"},
+		{"Ctrl+O", "open another folder"}, {"Ctrl+Q", "quit"},
 	})
 	mouse := keyGrid([][2]string{
 		{"click a note", "start there"}, {"double-click", "play from there"},

@@ -119,15 +119,16 @@ pedal() {
 	xdotool sleep 0.3
 }
 start commands -synth none -audio file -mode listen -thru
-xdotool sleep 1
 aseqdump -p "$client:1,$client:3" >commands1.sent 2>&1 &
 dump=$!
+xdotool sleep 1
 keys 15 16; keys 3E; keys 3E; keys 3C # A0+A#0 D4 D4 C4
 xdotool sleep 3                       # a bar of count-in (2 s), then the music
 keys 15 16; pedal                     # A0+A#0 Sustain: stop
 kill $dump
 aseqdump -p "$client:1,$client:3" >commands2.sent 2>&1 &
 dump=$!
+xdotool sleep 1
 keys 15 16; keys 39; keys 15 16; keys 3C # A0+A#0 A3, A0+A#0 C4
 xdotool sleep 3
 keys 15 16; keys 3C

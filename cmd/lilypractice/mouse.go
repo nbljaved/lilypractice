@@ -78,6 +78,7 @@ func (w *window) popupMenu(widget gtk.Widgetter, x, y float64, items []menuItem)
 	p.SetHAlign(gtk.AlignStart)
 	r := gdk.NewRectangle(int(x), int(y), 1, 1)
 	p.SetPointingTo(&r)
+	w.turnPopover(p)
 	keys := gtk.NewEventControllerKey()
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
 		if keyval == gdk.KEY_Escape || keyval == gdk.KEY_g && state&gdk.ControlMask != 0 {

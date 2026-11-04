@@ -32,6 +32,7 @@ type options struct {
 	name             string
 	channel          int
 	hand, mode       string
+	rotate           string
 	tempo            float64
 	thru, recompile  bool
 	score            int
@@ -49,6 +50,7 @@ func main() {
 	flag.Float64Var(&o.tempo, "tempo", 100, "tempo, in percent of the written tempo")
 	flag.BoolVar(&o.recompile, "recompile", false, "run LilyPond even if the .ly file is unchanged since last time (e.g. after editing a file it includes)")
 	flag.BoolVar(&o.thru, "thru", false, "pass notes from keyboard-in on to keys-out, for a keyboard connected only to lilypractice")
+	flag.StringVar(&o.rotate, "rotate", "", `turn the whole window a quarter turn, "left" (anticlockwise) or "right", for a screen held on its side, e.g. a tablet showing this one through Moonlight`)
 	flag.IntVar(&o.score, "score", 1, "in a file of several scores (movements, pieces of a set), the one to practise; the header lets you change it")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: lilypractice [flags] [piece.ly | folder]")
@@ -95,6 +97,9 @@ func (o options) settings() (practice.Settings, error) {
 	default:
 		return set, fmt.Errorf("-mode %q: want wait, play or listen", o.mode)
 	}
+	if o.rotate != "" && o.rotate != "left" && o.rotate != "right" {
+		return set, fmt.Errorf("-rotate %q: want left or right", o.rotate)
+	}
 	if o.channel < 0 || o.channel > 16 {
 		return set, fmt.Errorf("-channel %d: want 1 to 16, or 0 for all", o.channel)
 	}
@@ -108,7 +113,7 @@ func run(arg string, o options) error {
 	if err != nil {
 		return err
 	}
-	start := launch{score: o.score - 1, recompile: o.recompile}
+	start := launch{score: o.score - 1, recompile: o.recompile, rotate: o.rotate}
 	if arg == "" {
 		arg = "."
 	}

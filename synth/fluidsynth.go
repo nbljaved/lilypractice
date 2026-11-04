@@ -74,7 +74,6 @@ func StartFluidSynth(soundfont, audioDriver, id string) (*FluidSynth, error) {
 	}
 	args = append(args, soundfont)
 	cmd := exec.Command("fluidsynth", args...)
-	cmd.Env = cleanEnv()
 	// FluidSynth reads commands from its shell and exits when the shell
 	// closes, so it lives exactly as long as this pipe stays open.
 	stdin, err := cmd.StdinPipe()
@@ -123,16 +122,4 @@ func (f *FluidSynth) Stop() {
 		f.cmd.Process.Kill()
 		<-f.done
 	}
-}
-
-// cleanEnv drops LD_LIBRARY_PATH: libraries from another distribution
-// (for example Nix) there break Guix's FluidSynth.
-func cleanEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "LD_LIBRARY_PATH=") {
-			env = append(env, kv)
-		}
-	}
-	return env
 }

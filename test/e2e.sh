@@ -6,5 +6,5 @@
 #
 # Needs a built program (go build -o out/bin/ ./cmd/...).
 dir=$(cd "$(dirname "$0")/.." && pwd)
-exec env -u LD_LIBRARY_PATH guix shell -m "$dir/manifest.scm" xvfb-run xdotool procps -- \
+exec guix shell -m "$dir/manifest.scm" xvfb-run xdotool procps -- \
 	xvfb-run -a -s "-screen 0 1280x960x24" sh "$dir/test/e2e-run.sh" "$dir" "$dir/out/e2e"

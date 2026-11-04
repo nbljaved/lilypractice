@@ -16,6 +16,7 @@ import (
 	"lilypractice/practice"
 	"lilypractice/rsvg"
 	"lilypractice/score"
+	"lilypractice/turn"
 	"lilypractice/view"
 )
 
@@ -73,6 +74,10 @@ type window struct {
 	placeView        bool // follow the music as soon as the score has a size
 	recompile        bool // run LilyPond on scores even if unchanged
 
+	rotate   string        // the window is turned to the "left" or "right", or ""
+	tip      gtk.Widgetter // the turned tooltip, made when first wanted
+	tipLabel *gtk.Label    // its text
+
 	keyBase  int          // MIDI note of the lowest computer key, z
 	keysDown map[uint]int // keycode -> pitch, to ignore key repeat
 
@@ -108,11 +113,12 @@ type launch struct {
 	dir, file string
 	score     int // which score of the file, from 0
 	recompile bool
+	rotate    string // "left" or "right" to turn the window, or ""
 }
 
 func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	applyStyle(p.TextSize)
-	w := &window{s: s, prefs: p, recompile: start.recompile,
+	w := &window{s: s, prefs: p, recompile: start.recompile, rotate: start.rotate,
 		zoom: p.Zoom, keyBase: p.ComputerKeys, keysDown: make(map[uint]int),
 		hoverGroup: -1, pianoHover: -1, mouseKey: -1}
 	w.setPages(emptyPages())
@@ -209,8 +215,16 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 
 	w.win = gtk.NewApplicationWindow(app)
 	w.win.SetDefaultSize(1280, 900)
-	w.win.SetTitlebar(w.buildHeader())
-	w.win.SetChild(w.split)
+	if w.turned() {
+		// The header turns with the rest, so it is no title bar.
+		all := gtk.NewBox(gtk.OrientationVertical, 0)
+		all.Append(w.buildHeader())
+		all.Append(w.split)
+		w.win.SetChild(turn.New(all, w.rotate == "left"))
+	} else {
+		w.win.SetTitlebar(w.buildHeader())
+		w.win.SetChild(w.split)
+	}
 	w.win.AddController(keys)
 	w.win.AddTickCallback(func(gtk.Widgetter, gdk.FrameClocker) bool {
 		w.tick()
@@ -232,6 +246,7 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	}
 	w.v = s.view()
 	w.refresh(w.v, s.settings())
+	w.turnAll(w.win)
 	w.win.Present()
 	w.dirty = true
 }
@@ -634,7 +649,7 @@ func (w *window) keyPressed(keyval, keycode uint, state gdk.ModifierType) bool {
 		return true
 	}
 	if state&gdk.ControlMask != 0 {
-		if !w.loaded() && keyval != gdk.KEY_q && keyval != gdk.KEY_w {
+		if !w.loaded() && keyval != gdk.KEY_q && keyval != gdk.KEY_w && keyval != gdk.KEY_o {
 			return false
 		}
 		switch keyval {
@@ -646,6 +661,8 @@ func (w *window) keyPressed(keyval, keycode uint, state gdk.ModifierType) bool {
 			w.fitWidth()
 		case gdk.KEY_q, gdk.KEY_w:
 			w.win.Close()
+		case gdk.KEY_o:
+			w.chooseFolder()
 		case gdk.KEY_Left:
 			w.moveBars(-1)
 		case gdk.KEY_Right:

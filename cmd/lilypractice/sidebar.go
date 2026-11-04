@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,13 +12,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/core/gerror"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
 // The sidebar lists the LilyPond files of a folder: the folder of the
-// score you opened, or the one you named or are in. Click one to practise
-// it. The list follows the folder as files come and go.
+// score you opened, or the one you named or are in, until you open
+// another. Click one to practise it. The list follows the folder as files
+// come and go.
 
 type scoreFile struct {
 	path, name string
@@ -26,6 +32,8 @@ type scoreFile struct {
 type sidebar struct {
 	dir     string
 	box     *gtk.Box
+	head    *gtk.Box
+	name    *gtk.Label // the folder's
 	list    *gtk.ListBox
 	rows    []*gtk.ListBoxRow
 	files   []scoreFile
@@ -38,15 +46,21 @@ func (w *window) buildSidebar(dir string) *gtk.Box {
 	sb.box = gtk.NewBox(gtk.OrientationVertical, 0)
 	sb.box.AddCSSClass("sidebar")
 
-	head := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	head.AddCSSClass("sidebar-head")
-	head.SetTooltipText(dir)
-	head.Append(gtk.NewImageFromIconName("folder-symbolic"))
-	name := gtk.NewLabel(filepath.Base(dir))
-	name.SetEllipsize(pango.EllipsizeMiddle)
-	name.SetXAlign(0)
-	head.Append(name)
-	sb.box.Append(head)
+	sb.head = gtk.NewBox(gtk.OrientationHorizontal, 6)
+	sb.head.AddCSSClass("sidebar-head")
+	sb.head.SetTooltipText(dir)
+	sb.head.Append(gtk.NewImageFromIconName("folder-symbolic"))
+	sb.name = gtk.NewLabel(filepath.Base(dir))
+	sb.name.SetEllipsize(pango.EllipsizeMiddle)
+	sb.name.SetXAlign(0)
+	sb.name.SetHExpand(true)
+	sb.head.Append(sb.name)
+	open := gtk.NewButtonFromIconName("document-open-symbolic")
+	open.AddCSSClass("flat")
+	open.SetTooltipText("Open another folder (Ctrl+O)")
+	open.ConnectClicked(w.chooseFolder)
+	sb.head.Append(open)
+	sb.box.Append(sb.head)
 
 	sb.list = gtk.NewListBox()
 	// The score practised is marked by a style of its own: GTK's selection
@@ -92,6 +106,12 @@ func (w *window) checkFolder() {
 	}) {
 		return
 	}
+	w.showFiles(files)
+}
+
+// showFiles makes the rows of the list.
+func (w *window) showFiles(files []scoreFile) {
+	sb := &w.side
 	sb.files = files
 	for _, r := range sb.rows {
 		sb.list.Remove(r)
@@ -113,12 +133,84 @@ func (w *window) checkFolder() {
 		row := gtk.NewListBoxRow()
 		row.SetChild(text)
 		row.SetTooltipText(filepath.Base(f.path))
+		w.turnTooltip(row)
 		sb.list.Append(row)
 		sb.rows = append(sb.rows, row)
 	}
 	w.markChosen()
 	if w.msg.idle {
 		w.showNothingChosen()
+	}
+}
+
+// chooseFolder asks for another folder to list.
+func (w *window) chooseFolder() {
+	// Without its settings schema, found through XDG_DATA_DIRS, GTK's
+	// dialog would end the program.
+	if src := gio.SettingsSchemaSourceGetDefault(); src == nil || src.Lookup("org.gtk.gtk4.Settings.FileChooser", true) == nil {
+		fmt.Fprintln(os.Stderr, "lilypractice: can't open a folder: GTK's settings schemas aren't in XDG_DATA_DIRS")
+		return
+	}
+	d := gtk.NewFileDialog()
+	d.SetTitle("Open a folder of scores")
+	d.SetInitialFolder(gio.NewFileForPath(w.side.dir))
+	// GTK's own dialog, made when there is no portal, comes and is shown
+	// within SelectFolder.
+	stop := w.sizeFileDialogs()
+	d.SelectFolder(context.Background(), &w.win.Window, func(res gio.AsyncResulter) {
+		f, err := d.SelectFolderFinish(res)
+		var e *gerror.GError
+		if errors.As(err, &e) && e.Quark() == uint32(gtk.DialogErrorQuark()) && e.ErrorCode() == int(gtk.DialogErrorDismissed) {
+			return
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "lilypractice: choosing a folder:", err)
+			return
+		}
+		if dir := f.Path(); dir != "" {
+			w.openFolder(dir)
+		}
+	})
+	stop()
+}
+
+// sizeFileDialogs gives GTK's file dialogs, made until stop, a size that
+// shows them whole. GTK keeps the size you leave one at in dconf; without
+// that it opens at the least that fits, a short strip of files.
+func (w *window) sizeFileDialogs() (stop func()) {
+	tops := gtk.WindowGetToplevels()
+	h := tops.ConnectItemsChanged(func(at, _, added uint) {
+		for i := at; i < at+added; i++ {
+			d, ok := tops.Item(i).Cast().(*gtk.FileChooserDialog)
+			if !ok {
+				continue
+			}
+			// After GTK's own realize, which sets the size kept, if any.
+			d.ConnectRealize(func() {
+				if wd, ht := d.DefaultSize(); wd > 0 && ht > 0 {
+					return
+				}
+				s := w.textScale()
+				d.SetDefaultSize(min(int(900*s), w.win.Width()), min(int(640*s), w.win.Height()))
+			})
+		}
+	})
+	return func() { tops.HandlerDisconnect(h) }
+}
+
+// openFolder lists the scores of dir. The score practised stays until you
+// choose another.
+func (w *window) openFolder(dir string) {
+	sb := &w.side
+	sb.dir, sb.checked = dir, time.Now()
+	sb.name.SetText(filepath.Base(dir))
+	sb.head.SetTooltipText(dir)
+	if !w.loaded() {
+		w.setTitle(filepath.Base(dir))
+	}
+	w.showFiles(listScores(dir, nil))
+	if !w.sidebarShown() {
+		w.setSidebar(true)
 	}
 }
 
