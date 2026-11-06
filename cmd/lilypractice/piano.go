@@ -16,7 +16,8 @@ import (
 // range, all 88 keys unless set otherwise, with the keys in a real
 // piano's proportions: as wide as the height allows, centred. The keys
 // are drawn with depth, as seen from above the keyboard, and they move:
-// the keys you hold and the notes the music plays go down.
+// the keys you hold and the notes the music plays go down, and a key the
+// music strikes again comes up a moment before.
 
 type rgb struct{ r, g, b float64 }
 

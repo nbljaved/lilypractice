@@ -171,12 +171,14 @@ metronome).
   and it is centred (drag the line above it to resize it). It is drawn in
   perspective, as Pianoteq draws its own, and its keys move: the keys you
   hold and the notes the music plays go down, and spring back up when let
-  go. The transport bar names the chord of the keys down and of the notes
-  the sustain pedal holds (yours or the score's, whichever counts), both
-  hands' together, as Pianoteq does: C, Am7, Fdim, or G7/B when the
-  lowest note isn't the root. A dot marks the key to play. When that note is beyond
-  the computer keys, a ring marks the same note on them, as any octave
-  counts; the rings stop once you play a MIDI keyboard.
+  go; a key the music strikes again comes up a moment before, so that
+  each strike shows. The transport bar names the chord of the keys down
+  and of the notes the sustain pedal holds (yours or the score's,
+  whichever counts), both hands' together, as Pianoteq does: C, Am7,
+  Fdim, or G7/B when the lowest note isn't the root. A dot marks the key
+  to play. When that note is beyond the computer keys, a ring marks the
+  same note on them, as any octave counts; the rings stop once you play a
+  MIDI keyboard.
 - The view follows the music smoothly, pausing for a few seconds after you
   scroll. In the settings: one page or two side by side (F8), the cursor's
   style (a column over the staves, a line, the bar, or only the notes) and

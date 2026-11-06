@@ -359,11 +359,17 @@ func (w *window) tick() {
 	}
 	set := w.s.settings()
 	w.down = make(map[int]bool)
+	pressed := make(map[int]bool) // the keys the piano shows down
 	for p := range held {
-		w.down[p] = true
+		w.down[p], pressed[p] = true, true
 	}
-	for _, p := range v.SoundingPitches {
+	for i, p := range v.SoundingPitches {
 		w.down[p] = true
+		// A key the music strikes again comes up a moment before, so
+		// that it is seen struck; its note still sounds.
+		if !v.SoundingLifting[i] {
+			pressed[p] = true
+		}
 	}
 	// A key let go while the sustain pedal is down rings on until the
 	// pedal comes up: yours or the score's, whichever counts, holding
@@ -375,7 +381,7 @@ func (w *window) tick() {
 	w.sustain.follow(w.down, pedal)
 	w.ringing = maps.Clone(w.down)
 	maps.Copy(w.ringing, w.sustain.holds)
-	if w.moving.step(dt, w.down) {
+	if w.moving.step(dt, pressed) {
 		w.piano.QueueDraw()
 	}
 	if d := w.s.detected(); d.done {

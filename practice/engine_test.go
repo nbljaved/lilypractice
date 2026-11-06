@@ -739,3 +739,39 @@ func TestTremolos(t *testing.T) {
 		t.Errorf("struck %v, want %v", count, want)
 	}
 }
+
+// keyAt says whether the music sounds pitch, and whether its key is coming
+// up.
+func keyAt(v View, pitch int) (sounding, lifting bool) {
+	for i, p := range v.SoundingPitches {
+		if p == pitch {
+			return true, v.SoundingLifting[i]
+		}
+	}
+	return false, false
+}
+
+func TestKeyStruckAgainComesUpFirst(t *testing.T) {
+	// The bass of testdata/tremolos.ly at ♩ = 60: C3 as eighths struck at
+	// 0, 500, 1000 and 1500 ms, then held from 2 s to the end, at 4 s.
+	var e *Engine
+	var now time.Duration
+	check := func(at time.Duration, want bool) {
+		t.Helper()
+		run(e, now, at)
+		now = at + time.Millisecond
+		if sounding, lifting := keyAt(e.View(), 48); !sounding || lifting != want {
+			t.Errorf("C3 at %v: sounding %v, coming up %v; want sounding, coming up %v", at, sounding, lifting, want)
+		}
+	}
+	e = New(load(t, "tremolos"), Settings{Mode: Listen, Hand: Both})
+	e.Start(0)
+	check(400*time.Millisecond, false)
+	check(470*time.Millisecond, true) // up 60 ms before it is struck again
+	check(520*time.Millisecond, false)
+	check(3970*time.Millisecond, false) // nothing comes after it
+	// Looping bar 2, the held C3 is struck again as the loop goes back.
+	e, now = New(load(t, "tremolos"), Settings{Mode: Listen, Hand: Both, Loop: true, LoopFrom: 2, LoopTo: 2}), 0
+	e.Start(0)
+	check(1970*time.Millisecond, true)
+}

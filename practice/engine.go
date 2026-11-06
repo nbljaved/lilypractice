@@ -129,6 +129,10 @@ const (
 	clickBeat              = 77
 	clickLength            = 1.0 / 64
 	epsilon                = 1e-9
+	// A key the music strikes again comes up this long before, at most,
+	// and for no more than this share of its note, as a finger lets it go.
+	liftAhead = 60 * time.Millisecond
+	liftShare = 1.0 / 3
 )
 
 type note struct {
@@ -174,9 +178,10 @@ type sounding struct {
 }
 
 type pendingOff struct {
-	pos float64
-	s   sounding
-	id  string
+	pos  float64
+	s    sounding
+	id   string
+	from float64 // where the note was struck
 }
 
 // due is one of your notes whose time has come in play mode but which you
@@ -1094,7 +1099,7 @@ func (e *Engine) playClick(c click) []Out {
 	s := sounding{ClickOut, ClickChannel, pitch}
 	id := "click"
 	e.sounding[s] = id
-	e.addOff(pendingOff{e.pos + clickLength, s, id})
+	e.addOff(pendingOff{e.pos + clickLength, s, id, e.pos})
 	return []Out{{Port: ClickOut, On: true, Channel: ClickChannel, Pitch: pitch, Velocity: velocity}}
 }
 
@@ -1114,27 +1119,17 @@ func (e *Engine) heard(n note) bool {
 func (e *Engine) release(gi int) []Out {
 	g := &e.groups[gi]
 	var out []Out
-	mine := make(map[int]bool, len(g.mine))
-	for _, i := range g.mine {
-		mine[i] = true
-	}
 	for i, n := range g.notes {
-		if !e.heard(n) {
+		velocity, ok := e.plays(g, i)
+		if !ok {
 			continue
-		}
-		velocity := scoreVelocity
-		if mine[i] {
-			if e.set.Mode != Play || !e.set.Guide {
-				continue
-			}
-			velocity = guideVelocity
 		}
 		s := sounding{ScoreOut, channelOf(n.staff), n.pitch}
 		if _, on := e.sounding[s]; on { // same key still down: strike it again
 			out = append(out, Out{Port: ScoreOut, Channel: s.channel, Pitch: s.pitch})
 		}
 		e.sounding[s] = n.id
-		e.addOff(pendingOff{n.end, s, n.id})
+		e.addOff(pendingOff{n.end, s, n.id, g.pos})
 		out = append(out, Out{Port: ScoreOut, On: true, Channel: s.channel, Pitch: n.pitch, Velocity: velocity})
 	}
 	if gi >= 2 { // forget hits that are no longer shown
@@ -1143,6 +1138,91 @@ func (e *Engine) release(gi int) []Out {
 		}
 	}
 	return out
+}
+
+// plays says whether release plays note i of group g, and how loud.
+func (e *Engine) plays(g *group, i int) (velocity int, ok bool) {
+	if !e.heard(g.notes[i]) {
+		return 0, false
+	}
+	if slices.Contains(g.mine, i) {
+		if e.set.Mode != Play || !e.set.Guide {
+			return 0, false
+		}
+		return guideVelocity, true
+	}
+	return scoreVelocity, true
+}
+
+// lifting says whether the key of the note o lets go is coming up now: the
+// music strikes it again in a moment, and a finger lets it up first, so
+// that it is seen struck. The note still sounds.
+func (e *Engine) lifting(o pendingOff) bool {
+	at, ok := e.struckAgain(o.s, o.pos)
+	if !ok {
+		return false
+	}
+	lift := math.Min(liftShare*(at-o.from), liftAhead.Seconds()*e.speed())
+	return e.pos >= at-lift-epsilon
+}
+
+// struckAgain is where the music next strikes key s, held down until end:
+// at a group ahead that plays it, or at the loop's end or a repeat's, which
+// let every key up, if the music goes on with it there.
+func (e *Engine) struckAgain(s sounding, end float64) (float64, bool) {
+	leap, to, leaps := e.leap()
+	for k := e.next; k < len(e.groups); k++ {
+		pos := e.groups[k].pos
+		if leaps && pos > leap-epsilon {
+			break
+		}
+		if pos > end+epsilon {
+			return 0, false
+		}
+		if e.strikes(k, s) {
+			return pos, true
+		}
+	}
+	if !leaps || leap > end+epsilon {
+		return 0, false
+	}
+	k := sort.Search(len(e.groups), func(i int) bool { return e.groups[i].pos >= to-epsilon })
+	if k < len(e.groups) && e.groups[k].pos < to+epsilon && e.strikes(k, s) {
+		return leap, true
+	}
+	return 0, false
+}
+
+// leap is where the music next jumps, letting every key up, and where to:
+// back at the loop's end, or at a repeat's on to a span that doesn't go on
+// from there (nowhere, at Fine).
+func (e *Engine) leap() (at, to float64, ok bool) {
+	switch {
+	case e.looping():
+		return e.loopTo, e.loopFrom, true
+	case e.repeatAhead():
+		at := e.spans[e.si].to
+		if e.si+1 == len(e.spans) {
+			return at, math.Inf(1), true
+		}
+		if to := e.spans[e.si+1].from; math.Abs(to-at) >= epsilon {
+			return at, to, true
+		}
+	}
+	return 0, 0, false
+}
+
+// strikes says whether release plays key s in group k.
+func (e *Engine) strikes(k int, s sounding) bool {
+	g := &e.groups[k]
+	for i, n := range g.notes {
+		if n.pitch == s.pitch && channelOf(n.staff) == s.channel {
+			if _, ok := e.plays(g, i); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // channelOf gives each staff its own MIDI channel, skipping percussion.
@@ -1309,6 +1389,7 @@ type View struct {
 	Sounding                               []string // notes the program is playing
 	SoundingPitches                        []int
 	SoundingHands                          []Hand
+	SoundingLifting                        []bool // the key is coming up: the music strikes it again
 	Stats                                  Stats
 	QuarterBPM                             float64
 	BeatsLeft                              int // during the count-in: 4, 3, 2, 1
@@ -1382,15 +1463,19 @@ func (e *Engine) View() View {
 			continue
 		}
 		hand := e.handOf(id)
+		off := slices.IndexFunc(e.offs, func(o pendingOff) bool { return o.id == id && o.s == s })
+		lifting := off >= 0 && e.lifting(e.offs[off])
 		v.Sounding = append(v.Sounding, id)
 		v.SoundingPitches = append(v.SoundingPitches, s.pitch)
 		v.SoundingHands = append(v.SoundingHands, hand)
+		v.SoundingLifting = append(v.SoundingLifting, lifting)
 		// A note held on by a tie lights up as the music reaches it.
 		for _, t := range e.tiedOn[id] {
 			if t.pos <= v.Pos+epsilon {
 				v.Sounding = append(v.Sounding, t.id)
 				v.SoundingPitches = append(v.SoundingPitches, s.pitch)
 				v.SoundingHands = append(v.SoundingHands, hand)
+				v.SoundingLifting = append(v.SoundingLifting, lifting)
 			}
 		}
 	}
