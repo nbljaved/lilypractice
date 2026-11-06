@@ -105,13 +105,17 @@ func (w *window) showScoreChoice() {
 	}
 	var names []string
 	for i := range w.scores {
-		names = append(names, fmt.Sprintf("Score %d of %d", i+1, len(w.scores)))
+		name := fmt.Sprintf("Score %d of %d", i+1, len(w.scores))
+		if i < len(w.pagesOf) && w.pagesOf[i] >= 0 {
+			name += fmt.Sprintf(" · p. %d", w.pagesOf[i]+1)
+		}
+		names = append(names, name)
 	}
 	w.c.updating = true // not a choice of yours
 	w.scorePick = w.choice(names, w.chooseScore)
 	w.scorePick.SetSelected(uint(w.score))
 	w.c.updating = false
-	w.scorePick.SetTooltipText("This file holds several scores (movements, or pieces of a set): the one to practise")
+	w.scorePick.SetTooltipText("This file holds several scores (movements, or pieces of a set): the one to practise, and the page it begins on. A click on a note of another score practises that one.")
 	w.header.PackStart(w.scorePick)
 	w.turnAll(w.scorePick)
 }

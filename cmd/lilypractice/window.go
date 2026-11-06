@@ -33,6 +33,7 @@ type window struct {
 	fileTime time.Time // when it was changed, as loaded
 	pending  string    // the one being loaded, or ""
 	scores   []string  // the notes of each score in the file
+	pagesOf  []int     // the page each score begins on, or -1
 	score    int       // the one being practised
 	load     loader
 	side     sidebar
@@ -103,9 +104,10 @@ type window struct {
 	pan                panState
 	presses            int // clicks in a row, for double-clicks
 	pointerX, pointerY float64
-	hoverGroup         int // the note group under the pointer, or -1
-	pianoHover         int // the piano key under the pointer, or -1
-	mouseKey           int // the piano key held down with the mouse, or -1
+	hoverGroup         int    // the note group under the pointer, or -1
+	hoverOther         string // or the note of another score of the file under it
+	pianoHover         int    // the piano key under the pointer, or -1
+	mouseKey           int    // the piano key held down with the mouse, or -1
 }
 
 // launch is what to show first: the scores of dir, and file if not "".
@@ -261,24 +263,38 @@ func (w *window) takeEngine() {
 	w.bars = w.s.eng.Bars()
 	w.end = w.s.eng.End()
 	w.barAreaCache = nil
-	w.hoverGroup = -1
+	w.hoverGroup, w.hoverOther = -1, ""
 }
 
 // chooseScore practises another score of the file: a fresh start, with
-// the same settings but no loop.
+// the same settings but no loop, and the view at its beginning.
 func (w *window) chooseScore(i int) {
+	if w.switchScore(i) {
+		w.follow(w.s.view(), true)
+	}
+}
+
+// switchScore practises another score of the file from its start, with the
+// same settings but no loop; the view stays where it is. It says whether
+// it did.
+func (w *window) switchScore(i int) bool {
 	if i == w.score || i < 0 || i >= len(w.scores) {
-		return
+		return false
 	}
 	sc, err := score.Load(w.scores[i])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lilypractice:", err)
-		return
+		return false
 	}
 	w.replaceEngine(practice.New(sc, w.blankSettings()))
 	w.score = i
 	w.keepPlayableHand()
-	w.follow(w.s.view(), true)
+	if w.scorePick != nil && w.scorePick.Selected() != uint(i) {
+		w.c.updating = true // not a choice of yours
+		w.scorePick.SetSelected(uint(i))
+		w.c.updating = false
+	}
+	return true
 }
 
 // tick runs every frame: it follows the music, glides the view, keeps the

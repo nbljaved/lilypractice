@@ -37,6 +37,8 @@ type Pages struct {
 	boxes   map[string]rsvg.Rect // note heads
 	systems map[int]rsvg.Rect    // lines of music
 
+	systemNotes map[int][]string // the note heads of each line of music, when first wanted
+
 	// Each page rendered once per zoom level; recolouring a note only draws
 	// that note on top.
 	cacheZoom float64
@@ -147,6 +149,41 @@ func (p *Pages) System(id string) int {
 		return s
 	}
 	return -1
+}
+
+// NoteAt is the note head a click at x, y (in page units) picks, of any
+// score in the file: on the line of music nearest the point, if the point is
+// within a little of it, the note nearest across.
+func (p *Pages) NoteAt(x, y float64) (string, bool) {
+	if p.systemNotes == nil {
+		p.systemNotes = make(map[int][]string)
+		for id, s := range p.noteSystem {
+			if s >= 0 {
+				p.systemNotes[s] = append(p.systemNotes[s], id)
+			}
+		}
+	}
+	system, dist := -1, math.Inf(1)
+	for s := range p.systemNotes {
+		r, ok := p.SystemBox(s)
+		if !ok || x < r.X-10 || x > r.X+r.W+10 {
+			continue
+		}
+		if d := math.Max(0, math.Max(r.Y-y, y-r.Y-r.H)); d <= 20 && d < dist {
+			system, dist = s, d
+		}
+	}
+	best, bestDist := "", math.Inf(1)
+	for _, id := range p.systemNotes[system] {
+		r, ok := p.NoteBox(id)
+		if !ok {
+			continue
+		}
+		if d := math.Abs(r.X + r.W/2 - x); d < bestDist {
+			best, bestDist = id, d
+		}
+	}
+	return best, best != ""
 }
 
 // SystemBox is the box around the staves of a line of music, in page

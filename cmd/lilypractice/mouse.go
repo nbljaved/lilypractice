@@ -10,12 +10,15 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"lilypractice/lilypond"
 	"lilypractice/practice"
+	"lilypractice/rsvg"
 )
 
 // The mouse, beyond looping (loop.go):
 //
 //	score     click a note: start there; double-click: play from there;
+//	          a note of another score of the file: practise that one;
 //	          right-click: a menu for that note and bar; drag empty space,
 //	          or drag with the middle button: move the view; Ctrl+wheel:
 //	          zoom around the pointer; Shift+wheel: scroll sideways
@@ -185,6 +188,9 @@ func (w *window) addScoreMouse() {
 	right := gtk.NewGestureClick()
 	right.SetButton(gdk.BUTTON_SECONDARY)
 	right.ConnectPressed(func(_ int, x, y float64) {
+		if k, _ := w.otherScoreAt(x, y); k >= 0 {
+			w.switchScore(k)
+		}
 		if g := w.groupAt(x, y); g >= 0 {
 			w.barMenu(w.area, x, y, w.groupPos[g], w.barAt(w.groupPos[g]))
 		} else {
@@ -204,21 +210,25 @@ func (w *window) addScoreMouse() {
 	motion := gtk.NewEventControllerMotion()
 	motion.ConnectMotion(func(x, y float64) {
 		w.pointerX, w.pointerY = x, y
-		g := w.groupAt(x, y)
-		if g != w.hoverGroup {
-			w.hoverGroup = g
+		g := -1
+		_, other := w.otherScoreAt(x, y)
+		if other == "" {
+			g = w.groupAt(x, y)
+		}
+		if g != w.hoverGroup || other != w.hoverOther {
+			w.hoverGroup, w.hoverOther = g, other
 			w.dirty = true
 		}
 		switch {
 		case w.pan.active:
-		case g >= 0:
+		case g >= 0 || other != "":
 			w.area.SetCursorFromName("pointer")
 		default:
 			w.area.SetCursorFromName("grab")
 		}
 	})
 	motion.ConnectLeave(func() {
-		w.hoverGroup = -1
+		w.hoverGroup, w.hoverOther = -1, ""
 		w.dirty = true
 	})
 	w.area.AddController(motion)
@@ -255,17 +265,30 @@ func (w *window) zoomAt(factor, x, y float64) {
 }
 
 // drawHover marks the note a click would pick, faintly, with its bar
-// number; cr is in page units times zoom, like the pages.
+// number, or for a note of another score, that score's number; cr is in
+// page units times zoom, like the pages.
 func (w *window) drawHover(cr *cairo.Context) {
-	g := w.hoverGroup
-	if g < 0 || g >= len(w.groupIDs) || w.drag.mode >= makingLoop || w.pan.active {
+	if w.drag.mode >= makingLoop || w.pan.active {
 		return
 	}
-	a, ok := w.pages.Union(w.groupIDs[g])
+	var a rsvg.Rect
+	var system int
+	var text string
+	var ok bool
+	switch g := w.hoverGroup; {
+	case w.hoverOther != "":
+		a, ok = w.pages.NoteBox(w.hoverOther)
+		system = w.pages.System(w.hoverOther)
+		text = fmt.Sprintf("score %d", lilypond.ScoreOf(w.hoverOther)+1)
+	case g >= 0 && g < len(w.groupIDs):
+		a, ok = w.pages.Union(w.groupIDs[g])
+		system = w.groupSystem[g]
+		text = fmt.Sprintf("bar %d", w.barAt(w.groupPos[g]))
+	}
 	if !ok {
 		return
 	}
-	line, ok := w.pages.SystemBox(w.groupSystem[g])
+	line, ok := w.pages.SystemBox(system)
 	if !ok {
 		line = a
 	}
@@ -280,7 +303,7 @@ func (w *window) drawHover(cr *cairo.Context) {
 	cr.SetLineWidth(1)
 	cr.Stroke()
 	s := w.textScale()
-	label(cr, fmt.Sprintf("bar %d", w.barAt(w.groupPos[g])), x, top-4*s, 11*s, rgb{0.45, 0.45, 0.55})
+	label(cr, text, x, top-4*s, 11*s, rgb{0.45, 0.45, 0.55})
 }
 
 // The timeline.

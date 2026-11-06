@@ -27,6 +27,7 @@ type Output struct {
 	Pages      []string       // SVG pages, in order
 	Notes      string         // JSON written by the plugin: the first score's
 	Scores     []string       // the JSON of every score in the file, in order
+	ScorePages []int          // the page each score begins on (index into Pages), or -1
 	MIDI       string         // empty if the score has no \midi block
 	NotePage   map[string]int // note id -> index into Pages
 	NoteSystem map[string]int // note id -> line of music (system) it is on
@@ -155,12 +156,36 @@ func scoresOf(notes string) []string {
 	}
 }
 
-// collect finds the MIDI file and which page each note is on.
+// ScoreOf is which score of the file (from 0) a note belongs to, by its id:
+// the plugin calls the first score's notes n1, n2, ..., the second's s2n1,
+// s2n2, ... It is -1 for an id that is no note's.
+func ScoreOf(id string) int {
+	if strings.HasPrefix(id, "n") {
+		return 0
+	}
+	rest, ok := strings.CutPrefix(id, "s")
+	if !ok {
+		return -1
+	}
+	number, _, ok := strings.Cut(rest, "n")
+	k, err := strconv.Atoi(number)
+	if !ok || err != nil || k < 1 {
+		return -1
+	}
+	return k - 1
+}
+
+// collect finds the MIDI file, which page each note is on and where each
+// score begins.
 func collect(out *Output, stem string) (*Output, error) {
 	if len(out.Pages) == 0 {
 		return out, fmt.Errorf("no SVG pages for %s", stem)
 	}
 	out.Scores = append([]string{out.Notes}, scoresOf(out.Notes)...)
+	out.ScorePages = make([]int, len(out.Scores))
+	for k := range out.ScorePages {
+		out.ScorePages[k] = -1
+	}
 	for _, ext := range []string{".midi", ".mid"} {
 		if _, err := os.Stat(stem + ext); err == nil {
 			out.MIDI = stem + ext
@@ -177,6 +202,9 @@ func collect(out *Output, stem string) (*Output, error) {
 		for _, n := range notes {
 			out.NotePage[n.ID] = i
 			out.NoteSystem[n.ID] = n.System
+			if k := ScoreOf(n.ID); k >= 0 && k < len(out.ScorePages) && out.ScorePages[k] < 0 {
+				out.ScorePages[k] = i
+			}
 		}
 		for _, s := range staves {
 			out.Staves = append(out.Staves, Staff{ID: s.ID, Page: i, System: s.System})

@@ -151,7 +151,7 @@ func (w *window) practise(path string, res loaded) {
 		w.fileTime = info.ModTime()
 	}
 	w.setPages(res.pages)
-	w.file, w.scores, w.score = path, res.out.Scores, res.chosen
+	w.file, w.scores, w.pagesOf, w.score = path, res.out.Scores, res.out.ScorePages, res.chosen
 	w.replaceEngine(practice.New(res.sc, w.blankSettings()))
 	w.keepPlayableHand()
 	w.showScoreChoice()
@@ -167,7 +167,7 @@ func (w *window) practise(path string, res loaded) {
 func (w *window) unload() {
 	w.replaceEngine(practice.New(&score.Score{}, w.blankSettings()))
 	w.setPages(emptyPages())
-	w.file, w.scores, w.score = "", nil, 0
+	w.file, w.scores, w.pagesOf, w.score = "", nil, nil, 0
 	w.showScoreChoice()
 	w.setTitle(filepath.Base(w.side.dir))
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"lilypractice/lilypond"
 	"lilypractice/rsvg"
 )
 
@@ -211,6 +212,9 @@ func (w *window) addScoreGestures() {
 	drag.ConnectDragBegin(func(x, y float64) {
 		startX, startY = x, y
 		shift = drag.CurrentEventState()&gdk.ShiftMask != 0
+		if k, _ := w.otherScoreAt(x, y); k >= 0 {
+			w.switchScore(k) // then the click is on a note of this one
+		}
 		start = w.groupAt(x, y)
 		w.drag = loopDrag{}
 		if start < 0 { // no notes here: move the view
@@ -281,6 +285,24 @@ func (w *window) groupAt(x, y float64) int {
 		}
 	}
 	return best
+}
+
+// otherScoreAt is the other score of the file whose note a click at a
+// point in the score area picks, and that note; or -1. It is a score's
+// whose line of music is nearest the point.
+func (w *window) otherScoreAt(x, y float64) (int, string) {
+	if len(w.scores) < 2 {
+		return -1, ""
+	}
+	id, ok := w.pages.NoteAt((x-w.originX)/w.zoom, (y+w.scrollY)/w.zoom)
+	if !ok {
+		return -1, ""
+	}
+	k := lilypond.ScoreOf(id)
+	if k == w.score || k < 0 || k >= len(w.scores) {
+		return -1, ""
+	}
+	return k, id
 }
 
 // systemBox is pages.SystemBox, remembered: groupAt asks on every move of

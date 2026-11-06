@@ -93,7 +93,8 @@ and the errors are printed.
   c8= (and =c2:8=) as four eighths, =\repeat tremolo 4 { c16 e }= as c and e
   in turn.
 - *Several scores in one file* (movements, or pieces of a set): the first
-  is practised; =-score N= or the list in the header picks another. A
+  is practised; =-score N=, the list in the header (which gives the page
+  each begins on) or a click on a note of another picks another. A
   =\score= without staves (a chord drawn in a markup) doesn't count.
 - *Hidden notes* (transparent, =\hideNotes=) sound but are always played for
   you, as you can't read them.
@@ -178,6 +179,7 @@ The mouse:
 | Where       | Does                                                          |
 |-------------+---------------------------------------------------------------|
 | score       | click a note: start there; double-click: play from there      |
+|             | (a note of another score in the file: practise that one)      |
 |             | right-click: play from here, start here, loop this bar / up   |
 |             | to here / four bars, loop off, fit to width, one or two pages |
 |             | drag over bars: loop them; shift-click: loop to that bar      |
