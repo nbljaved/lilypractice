@@ -36,6 +36,7 @@ type session struct {
 	// Under mu:
 	held        map[int]heldKey // keys down now and how they were judged
 	pedal       bool            // your sustain pedal is down
+	pedalSent   bool            // and was played on keys-out
 	detect      detection
 	commandKeys *midikeys.Map     // the MIDI keyboard's commands
 	onCommand   func(name string) // runs a command, from any goroutine
@@ -139,19 +140,29 @@ func (s *session) send(out []practice.Out) {
 	}
 }
 
-// computerPedal is the sustain pedal on the computer keyboard (Shift):
-// it holds the notes of the computer keys.
-func (s *session) computerPedal(down bool) {
-	if s.seq != nil {
-		value := 0
-		if down {
-			value = 127
+// computerPedal is the sustain pedal on the computer keyboard (Shift).
+func (s *session) computerPedal(down bool) { s.yourPedal(down, 0, true) }
+
+// yourPedal takes your sustain pedal going down or up. It is played only
+// when it counts, rather than the score's (see practice.Engine.YourPedal),
+// and then on the music's channels too, so that it holds every note; on
+// keys-out, on channel, if pass, for the computer keys' notes or a
+// keyboard's passed on. A MIDI keyboard connected to the instrument
+// itself reaches it whatever lilypractice does.
+func (s *session) yourPedal(down bool, channel int, pass bool) {
+	s.do(func(time.Duration) []practice.Out {
+		s.pedal = down
+		out, counts := s.eng.YourPedal(down)
+		if s.seq != nil && pass && (down && counts || !down && s.pedalSent) {
+			value := 0
+			if down {
+				value = 127
+			}
+			s.seq.Controller(s.keysOut, channel, practice.SustainPedal, value)
+			s.pedalSent = down
 		}
-		s.seq.Controller(s.keysOut, 0, practice.SustainPedal, value)
-	}
-	s.mu.Lock()
-	s.pedal = down
-	s.mu.Unlock()
+		return out
+	})
 }
 
 func (s *session) pedalDown() bool {
@@ -417,13 +428,10 @@ func (s *session) runMIDIInput() {
 			}
 			s.key(ev.A, false, practice.MIDIKeyboard)
 		case alsa.Controller: // sustain pedal and the like
-			if s.thru {
-				s.seq.Controller(s.keysOut, ev.Channel, ev.A, ev.B)
-			}
 			if ev.A == practice.SustainPedal {
-				s.mu.Lock()
-				s.pedal = ev.B >= 64
-				s.mu.Unlock()
+				s.yourPedal(ev.B >= 64, ev.Channel, s.thru)
+			} else if s.thru {
+				s.seq.Controller(s.keysOut, ev.Channel, ev.A, ev.B)
 			}
 		}
 	}

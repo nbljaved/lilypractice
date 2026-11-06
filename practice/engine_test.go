@@ -413,10 +413,13 @@ func TestPedalRestoredWhenStartingInside(t *testing.T) {
 	}
 }
 
-func TestPedalYourselfShowsTheScoresPedalWithoutPlayingIt(t *testing.T) {
-	e := New(loadFeatures(t), Settings{Mode: Listen, Hand: Both, PedalYourself: true})
+func TestYouPedalByDefaultInPlayMode(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Play, Hand: Both})
 	if !e.View().PedalMarks {
 		t.Fatal("features.ly marks the sustain pedal, but PedalMarks is false")
+	}
+	if !e.View().YouPedal {
+		t.Error("YouPedal is false in play mode, want true")
 	}
 	e.Start(0)
 	var down []bool // the score's pedal, a quarter after each mark
@@ -433,14 +436,28 @@ func TestPedalYourselfShowsTheScoresPedalWithoutPlayingIt(t *testing.T) {
 	}
 }
 
-func TestPedalYourselfMidwayLiftsAndRestoresThePedal(t *testing.T) {
-	e := New(loadFeatures(t), Settings{Mode: Listen, Hand: Both})
+func TestTheScorePedalsInListenMode(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Listen, Hand: Both}) // ScorePedals off
+	if e.View().YouPedal {
+		t.Error("YouPedal is true in listen mode, want false")
+	}
+	if out, counts := e.YourPedal(true); out != nil || counts {
+		t.Errorf("your pedal in listen mode sent %v and counts %v, want nothing", out, counts)
+	}
 	e.Start(0)
-	run(e, 0, whole/2) // the pedal is down
+	if !slices.ContainsFunc(run(e, 0, whole/2), func(o sent) bool { return o.Controller == SustainPedal && o.Value == 127 }) {
+		t.Error("the score's pedal wasn't played in listen mode")
+	}
+}
+
+func TestScorePedalsMidwayHandsThePedalOver(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Play, Hand: Both, ScorePedals: true})
+	e.Start(0)
+	run(e, 0, whole/2) // the score's pedal is down
 	isPedal := func(value int) func(Out) bool {
 		return func(o Out) bool { return o.Controller == SustainPedal && o.Value == value }
 	}
-	if out := e.SetPedalYourself(true); len(out) != 2 || !slices.ContainsFunc(out, isPedal(0)) {
+	if out := e.SetScorePedals(false); len(out) != 2 || !slices.ContainsFunc(out, isPedal(0)) {
 		t.Errorf("pedalling yourself sent %v, want the pedal up on both channels", out)
 	}
 	if !e.View().ScorePedal {
@@ -450,8 +467,28 @@ func TestPedalYourselfMidwayLiftsAndRestoresThePedal(t *testing.T) {
 		t.Errorf("stop sent %v, want your pedal left alone", out)
 	}
 	e.Start(0)
-	if out := e.SetPedalYourself(false); len(out) != 2 || !slices.ContainsFunc(out, isPedal(127)) {
+	if out := e.SetScorePedals(true); len(out) != 2 || !slices.ContainsFunc(out, isPedal(127)) {
 		t.Errorf("playing the marks again sent %v, want the pedal down on both channels", out)
+	}
+	if out, counts := e.YourPedal(true); out != nil || counts {
+		t.Errorf("your pedal while the score's plays sent %v and counts %v, want nothing", out, counts)
+	}
+}
+
+func TestYourPedalHoldsTheMusic(t *testing.T) {
+	e := New(loadFeatures(t), Settings{Mode: Play, Hand: Both})
+	isPedal := func(value int) func(Out) bool {
+		return func(o Out) bool { return o.Controller == SustainPedal && o.Value == value }
+	}
+	if out, counts := e.YourPedal(true); !counts || len(out) != 2 || !slices.ContainsFunc(out, isPedal(127)) {
+		t.Errorf("your pedal sent %v and counts %v, want it down on both channels", out, counts)
+	}
+	e.Stop() // lifts it from the music
+	if out := e.Start(0); len(out) != 2 || !slices.ContainsFunc(out, isPedal(127)) {
+		t.Errorf("starting with your pedal down sent %v, want it down on both channels", out)
+	}
+	if out, _ := e.YourPedal(false); len(out) != 2 || !slices.ContainsFunc(out, isPedal(0)) {
+		t.Errorf("letting your pedal go sent %v, want it up on both channels", out)
 	}
 }
 

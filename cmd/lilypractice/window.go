@@ -93,6 +93,10 @@ type window struct {
 	drag         loopDrag
 	loopSet      bool // a loop was placed in this score
 	heldWas      map[int]heldKey
+	down         map[int]bool // the keys you hold, and those the music plays
+	sustain      sustain      // the notes the sustain pedal that counts holds
+	ringing      map[int]bool // the keys down, and the notes the pedal holds
+	moving       keyMotion    // the piano's keys going down or coming up
 	barAreaCache map[int][]rsvg.Rect
 	systemBoxes  map[int]*rsvg.Rect // nil: not on the page
 	commandKeys  commandKeys
@@ -122,7 +126,7 @@ func newWindow(app *gtk.Application, s *session, p prefs, start launch) {
 	applyStyle(p.TextSize)
 	w := &window{s: s, prefs: p, recompile: start.recompile, rotate: start.rotate,
 		zoom: p.Zoom, keyBase: p.ComputerKeys, keysDown: make(map[uint]int),
-		hoverGroup: -1, pianoHover: -1, mouseKey: -1}
+		moving: make(keyMotion), hoverGroup: -1, pianoHover: -1, mouseKey: -1}
 	w.setPages(emptyPages())
 	w.takeEngine()
 
@@ -348,8 +352,30 @@ func (w *window) tick() {
 		w.syncScrollBars()
 		w.dirty = false
 	}
-	if held := w.s.heldKeys(); !maps.Equal(held, w.heldWas) { // keys change at any time
+	held := w.s.heldKeys()
+	if !maps.Equal(held, w.heldWas) { // keys change at any time
 		w.heldWas = held
+		w.piano.QueueDraw()
+	}
+	set := w.s.settings()
+	w.down = make(map[int]bool)
+	for p := range held {
+		w.down[p] = true
+	}
+	for _, p := range v.SoundingPitches {
+		w.down[p] = true
+	}
+	// A key let go while the sustain pedal is down rings on until the
+	// pedal comes up: yours or the score's, whichever counts, holding
+	// every note.
+	pedal := v.ScorePedal
+	if v.YouPedal {
+		pedal = w.s.pedalDown()
+	}
+	w.sustain.follow(w.down, pedal)
+	w.ringing = maps.Clone(w.down)
+	maps.Copy(w.ringing, w.sustain.holds)
+	if w.moving.step(dt, w.down) {
 		w.piano.QueueDraw()
 	}
 	if d := w.s.detected(); d.done {
@@ -360,7 +386,7 @@ func (w *window) tick() {
 		w.prefs.save()
 		w.prefsChanged, w.savedAt = false, now
 	}
-	w.refresh(v, w.s.settings())
+	w.refresh(v, set)
 }
 
 func (w *window) syncScrollBars() {
@@ -483,11 +509,11 @@ func (w *window) setFollowRepeats(on bool) {
 	w.prefsChanged = true
 }
 
-// setPedalMarks plays the score's pedal marks, or leaves the pedalling to
-// you.
-func (w *window) setPedalMarks(on bool) {
-	w.do(func(time.Duration) []practice.Out { return w.s.eng.SetPedalYourself(!on) })
-	w.prefs.PedalYourself = !on
+// setScorePedals plays the score's pedal marks in wait and play mode, in
+// place of your pedal, or leaves the pedalling to you.
+func (w *window) setScorePedals(on bool) {
+	w.do(func(time.Duration) []practice.Out { return w.s.eng.SetScorePedals(on) })
+	w.prefs.ScorePedals = on
 	w.prefsChanged = true
 }
 func (w *window) setGuide(on bool)     { w.setting(w.s.eng.SetGuide)(on) }

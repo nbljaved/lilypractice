@@ -2,13 +2,16 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"lilypractice/chord"
 	"lilypractice/practice"
 )
 
@@ -52,6 +55,7 @@ type controls struct {
 	pedal          *gtk.Label
 	lastPedal      bool
 	scorePedal     *gtk.Label
+	chord          *gtk.Label
 	lastScorePedal bool
 	keyboardSize   *gtk.DropDown
 	keyboardRange  *gtk.Label
@@ -155,15 +159,35 @@ func (w *window) buildTransport() *gtk.CenterBox {
 	pedals.SetVAlign(gtk.AlignCenter)
 	c.pedal = gtk.NewLabel("Pedal")
 	c.pedal.AddCSSClass("pedal-indicator")
-	c.pedal.SetTooltipText("Your sustain pedal: a MIDI keyboard's, or hold Shift")
+	c.pedal.SetTooltipText("Your sustain pedal: a MIDI keyboard's, or hold Shift. It holds every note in wait and play mode, unless the score's does; dimmed when it doesn't count. Click to pedal yourself")
 	c.scorePedal = gtk.NewLabel("Score")
 	c.scorePedal.AddCSSClass("pedal-indicator")
 	c.scorePedal.AddCSSClass("score")
-	c.scorePedal.SetTooltipText("The score's sustain pedal: played for you, or for you to follow with Play pedal marks off (settings)")
+	c.scorePedal.SetTooltipText("The score's sustain pedal: it holds every note in listen mode, and in wait and play mode if you click it (or Settings → Play pedal marks); dimmed when yours counts, for you to follow")
 	c.scorePedal.SetVisible(false)
 	pedals.Append(c.pedal)
 	pedals.Append(c.scorePedal)
+	// Only one pedal counts at a time: click the other to hand it over,
+	// in wait and play mode (in listen mode the score's always counts).
+	for _, l := range []*gtk.Label{c.pedal, c.scorePedal} {
+		click := gtk.NewGestureClick()
+		click.ConnectPressed(func(int, float64, float64) {
+			if w.s.settings().Mode != practice.Listen {
+				w.setScorePedals(l == c.scorePedal)
+			}
+		})
+		l.AddController(click)
+		l.SetCursorFromName("pointer")
+	}
 	start.Append(pedals)
+	// The chord of the keys down and the notes the pedal holds, as
+	// Pianoteq names it.
+	c.chord = gtk.NewLabel("")
+	c.chord.AddCSSClass("chord")
+	c.chord.SetWidthChars(8) // room for most, so the bar stays still
+	c.chord.SetXAlign(0)
+	c.chord.SetTooltipText("The chord of the keys down and the notes the sustain pedal holds: yours and the music's together, with the lowest note after a slash if it isn't the root")
+	start.Append(c.chord)
 	bar.SetStartWidget(start)
 
 	// Middle: mode and hands.
@@ -426,7 +450,7 @@ func (w *window) buildSettingsPanel() *gtk.Popover {
 	c.cursorColour = w.choice(colours, func(i int) { w.setCursor(w.prefs.CursorStyle, cursorColours[i].name) })
 	c.guide = w.toggle(w.setGuide)
 	c.repeats = w.toggle(w.setFollowRepeats)
-	c.pedalMarks = w.toggle(w.setPedalMarks)
+	c.pedalMarks = w.toggle(w.setScorePedals)
 	c.anyOctave = w.toggle(w.setAnyOctave)
 	c.keysFrom = gtk.NewLabel("")
 	c.keysFrom.SetWidthChars(4)
@@ -452,7 +476,7 @@ func (w *window) buildSettingsPanel() *gtk.Popover {
 			func() { w.setCountIn(w.prefs.CountIn - 1) }, func() { w.setCountIn(w.prefs.CountIn + 1) })),
 		row("Guide", "In play mode, also hear your part, quietly", c.guide),
 		row("Follow repeats", "Go back at repeat signs and take the endings in turn, and D.S. al Fine; loops play their bars as written", c.repeats),
-		row("Play pedal marks", "The score's pedals; off to pedal yourself, following the Score light", c.pedalMarks),
+		row("Play pedal marks", "In wait and play mode, in place of your pedal (listen mode always plays them); or click the Score light", c.pedalMarks),
 		row("Metronome sound", "Also for the count-in; F3 turns it on", c.clickSound),
 		row("Metronome volume", "", w.stepper(c.clickVolume, "Metronome volume",
 			func() { w.setClick(w.prefs.ClickSound, w.prefs.ClickVolume-10) },
@@ -656,6 +680,7 @@ func (w *window) refresh(v practice.View, set practice.Settings) {
 		state += " · " + ordinal(v.Pass) + " time"
 	}
 	text(c.state, state)
+	text(c.chord, chord.Name(slices.Collect(maps.Keys(w.ringing))))
 
 	if !c.modes[set.Mode].Active() {
 		c.modes[set.Mode].SetActive(true)
@@ -731,7 +756,7 @@ func (w *window) refresh(v practice.View, set practice.Settings) {
 	for _, s := range [...]struct {
 		sw *gtk.Switch
 		on bool
-	}{{c.guide, set.Guide}, {c.anyOctave, set.AnyOctave}, {c.repeats, !set.IgnoreRepeats}, {c.pedalMarks, !set.PedalYourself}} {
+	}{{c.guide, set.Guide}, {c.anyOctave, set.AnyOctave}, {c.repeats, !set.IgnoreRepeats}, {c.pedalMarks, set.ScorePedals}} {
 		if s.sw.Active() != s.on {
 			s.sw.SetActive(s.on)
 		}
@@ -787,6 +812,18 @@ func (w *window) refresh(v practice.View, set practice.Settings) {
 		c.scorePedal.SetVisible(v.PedalMarks)
 	}
 	light(c.scorePedal, v.ScorePedal, &c.lastScorePedal)
+	for _, p := range []struct {
+		l    *gtk.Label
+		idle bool
+	}{{c.pedal, !v.YouPedal}, {c.scorePedal, v.YouPedal}} {
+		if p.l.HasCSSClass("idle") != p.idle {
+			if p.idle {
+				p.l.AddCSSClass("idle")
+			} else {
+				p.l.RemoveCSSClass("idle")
+			}
+		}
+	}
 
 	low, high := w.prefs.KeyLow, w.prefs.KeyHigh
 	selected := uint(gtk.INVALID_LIST_POSITION)

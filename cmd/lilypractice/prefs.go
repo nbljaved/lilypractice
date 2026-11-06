@@ -20,7 +20,7 @@ type prefs struct {
 	ClickSound      string // the metronome's: a name from clickSounds
 	ClickVolume     int    // the metronome's, in percent
 	IgnoreRepeats   bool   // play straight through, as written
-	PedalYourself   bool   // the score's pedal marks aren't played
+	ScorePedals     bool   // in wait and play mode the score's pedal marks are played, not yours
 	HideSidebar     bool   // the list of scores
 	SidebarWidth    int    // pixels
 	TextSize        int    // of everything but the score and piano, in percent

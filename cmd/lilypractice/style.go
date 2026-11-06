@@ -60,7 +60,9 @@ button.round { border-radius: 9999px; min-width: 34px; min-height: 34px; padding
 }
 .pedal-indicator.on { background: #6d28d9; border-color: #8b5cf6; color: white; }
 .pedal-indicator.score.on { background: rgba(109, 40, 217, 0.3); color: #ddd6fe; }
+.pedal-indicator.idle { opacity: 0.4; } /* the pedal that doesn't count */
 .state { color: #a1a1aa; font-size: 11px; }
+.chord { color: #e4e4e7; font-weight: bold; font-size: 18px; }
 
 .segmented button { padding: 4px 12px; }
 .segmented button:checked,

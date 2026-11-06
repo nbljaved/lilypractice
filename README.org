@@ -133,16 +133,20 @@ next pass.
 drag the loop's edges on the timeline to change it. The looped bars are
 shaded on the score. The Loop button (F6) turns it on and off.
 
-*Pedals*: the score's pedal markings (=\sustainOn= / =\sustainOff=, and
-sostenuto and una corda) are played with the music. Your own sustain pedal
-— a MIDI keyboard's, or *Shift* on the computer keyboard — keeps your notes
-ringing; the Pedal light in the transport bar shows when it is down.
-Below it, for a score that marks the sustain pedal, the Score light shows
-when the score's is down. To practise pedalling, turn off Settings → Play
-pedal marks (it stays off next time): the score's pedals are no longer
-played, and you follow the Score light with your own. (On an instrument
-that plays every channel on one piano, the score's pedal holds your notes
-too, and gets in the way of yours.)
+*Pedals*: one sustain pedal counts at a time, and like a piano's it holds
+every note, yours and the music's. In listen mode it is the score's: its
+pedal markings (=\sustainOn= / =\sustainOff=, and sostenuto and una corda)
+are played with the music. In wait and play mode it is yours — a MIDI
+keyboard's, or *Shift* on the computer keyboard — and you follow the
+score's. The Pedal light in the transport bar shows when yours is down;
+below it, for a score that marks the sustain pedal, the Score light shows
+when the score's is. The one that doesn't count is dimmed. To have the
+score pedal in wait and play mode too, click the Score light, or turn on
+Settings → Play pedal marks (it stays on next time); click the Pedal
+light to pedal yourself again. A MIDI keyboard connected straight to the
+instrument reaches it whatever lilypractice does, so there your pedal
+still sounds while the score's counts; Shift, or a keyboard passed on
+with =-thru=, doesn't.
 
 *Your keyboard*: in the settings, choose its size (88, 76, 61, 49, 37 or 25
 keys), or press /Detect/ and then its lowest and highest key. The piano
@@ -155,7 +159,8 @@ settings are kept in =$XDG_CONFIG_HOME/lilypractice/prefs.json=
 The header (a button for the list of scores, title, stats, keys,
 settings); on the left the list of scores; then, top to bottom, the score
 with its scroll bars, a piano, a timeline of the bars, and the transport
-bar (restart, play, bar, pedal, mode, hands, tempo, loop, metronome).
+bar (restart, play, bar, pedal, chord, mode, hands, tempo, loop,
+metronome).
 
 - Notes are coloured by hand, on the score and the piano: blue for the
   right hand, orange for the left, violet for any other staff; green is
@@ -163,10 +168,15 @@ bar (restart, play, bar, pedal, mode, hands, tempo, loop, metronome).
   wrong key. A note tied on from another (joined to it by a curve) isn't
   played again but held; it lights up as the music reaches it.
 - The piano has a real piano's proportions: its height sets the key size,
-  and it is centred (drag the line above it to resize it). A dot marks the
-  key to play. When that note is beyond the computer keys, a ring marks the
-  same note on them, as any octave counts; the rings stop once you play a
-  MIDI keyboard.
+  and it is centred (drag the line above it to resize it). It is drawn in
+  perspective, as Pianoteq draws its own, and its keys move: the keys you
+  hold and the notes the music plays go down, and spring back up when let
+  go. The transport bar names the chord of the keys down and of the notes
+  the sustain pedal holds (yours or the score's, whichever counts), both
+  hands' together, as Pianoteq does: C, Am7, Fdim, or G7/B when the
+  lowest note isn't the root. A dot marks the key to play. When that note is beyond
+  the computer keys, a ring marks the same note on them, as any octave
+  counts; the rings stop once you play a MIDI keyboard.
 - The view follows the music smoothly, pausing for a few seconds after you
   scroll. In the settings: one page or two side by side (F8), the cursor's
   style (a column over the staves, a line, the bar, or only the notes) and

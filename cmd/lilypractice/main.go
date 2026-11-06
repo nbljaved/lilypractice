@@ -135,7 +135,7 @@ func run(arg string, o options) error {
 	set.KeyLow, set.KeyHigh = p.KeyLow, p.KeyHigh
 	set.CountIn = p.CountIn
 	set.IgnoreRepeats = p.IgnoreRepeats
-	set.PedalYourself = p.PedalYourself
+	set.ScorePedals = p.ScorePedals
 	click := clickSoundNamed(p.ClickSound)
 	set.ClickAccent, set.ClickBeat, set.ClickVolume = click.accent, click.beat, float64(p.ClickVolume)/100
 	// Nothing to practise until a score is loaded.
