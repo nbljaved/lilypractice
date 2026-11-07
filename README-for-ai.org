@@ -1,0 +1,430 @@
+#+TITLE: lilypractice, in full
+
+Everything about lilypractice that the short =README.org= leaves out:
+what it does and doesn't, every flag, key and mouse action, MIDI
+commands, sound, tests and how the code is laid out.
+
+* What it does
+- Shows a score as LilyPond engraves it, page by page, with a cursor that
+  follows the music and notes lit as they sound: blue for the right hand,
+  orange for the left.
+- Opens any =.ly= file, and lists the others in its folder. Scores written
+  for an older LilyPond (most of Mutopia's) are updated on a copy with
+  =convert-ly=.
+- Three modes:
+  * /wait/ (the music waits for your notes),
+  * /play/ (it keeps time and scores you: perfect, good, missed, wrong) and
+  * /listen/
+- Practise the right hand, the left or both; the program plays the rest.
+- Tempo, loops of bars, a metronome with nine sounds, a count-in.
+- Follows the score's repeats (volta repeats, alternative endings, D.S.
+  and D.C. al Fine), tremolos, ties, grace notes, pedal markings and tempo
+  changes; several scores in one file; hidden notes; transposing
+  instruments.
+- Plays with a MIDI keyboard, the computer keyboard (two rows like a
+  piano) or the mouse on the piano on screen. Sequences of keys on a MIDI
+  keyboard run commands (play, back a bar, faster...).
+- Sounds through FluidSynth, started for you, or any ALSA synth (Pianoteq,
+  a hardware module...); the metronome always through FluidSynth.
+
+* What it doesn't do
+- Read anything but LilyPond: no MusicXML, MIDI or PDF scores.
+- Hear an acoustic piano: you play a MIDI keyboard, the computer keyboard
+  or the mouse.
+- Run outside Linux: it needs ALSA and GTK 4, and is only packaged for
+  Guix.
+- Edit or transpose scores, show falling notes (as Synthesia does), or
+  keep a history of your practice across sessions.
+- Follow repeats written only as text ("D.C. al Fine" in a markup, as older
+  scores do) or as plain bar lines, or coda jumps; play percent repeats.
+- See a tempo set only inside a =\midi= block (common in Mutopia files):
+  such scores play at ♩ = 60. Use ↑ ↓ or =-tempo=.
+- Play drum staves: unpitched notes are left out.
+
+* Install and run
+On my machines it is a Guix package, from the personal channel in my
+dotfiles (=guix-config/modules/nbl/packages/lilypractice.scm=). From a
+checkout, =run.sh= builds and starts it instead:
+#+begin_src sh
+./run.sh testdata/bach-invention-01.ly   # this piece; the list has its folder
+./run.sh ~/music                         # choose from the scores of ~/music
+./run.sh                                 # ... of the current folder
+./run.sh -mode play -hand left -tempo 70 piece.ly
+./run.sh -h          # all flags
+#+end_src
+Installed, the command is =lilypractice=, with the same arguments. =run.sh=
+builds the program in the Guix environment from =manifest.scm= (the first
+build takes about 5 minutes) and starts it.
+
+A list on the left shows the LilyPond files (=.ly=) of the folder, with the
+title and composer from their =\header=; click one to practise it. It
+keeps up as files are added or removed. The button at its top, or Ctrl+O,
+opens another folder. F9, or the button at the top left, shows or hides
+it; drag its edge to make it wider.
+
+A score is compiled with LilyPond the first time, in the background (the
+window says so, and you can choose another meanwhile), and reused while
+the =.ly= file is unchanged. Click the score's name again after editing it
+to load it afresh; =-recompile= always runs LilyPond (needed after editing
+only a file the score =\include=s). Mode, hand, tempo and the other
+settings stay as they were when you change scores; the loop doesn't.
+
+* Scores from the web
+Most =.ly= files on the web, Mutopia's among them, were written for an
+older LilyPond. lilypractice copies such a score (and the files it
+=\include=s) into its cache, updates the copy with =convert-ly=, and
+compiles that; your file is left alone. If LilyPond reports errors but
+still makes the score (an unknown layout setting, say), it is shown anyway
+and the errors are printed.
+
+- *Repeats* are followed: volta repeats go back as often as they say and
+  take their first, second... endings in turn, and =\repeat segno= gives
+  D.S. or D.C. al Fine. The transport shows "2nd time" and so on. Settings →
+  Follow repeats turns this off; a loop always plays its bars as written.
+  A tie into a second ending doesn't hold the note over the jump.
+- *Tremolos* are played as the strikes they stand for: =\repeat tremolo 4
+  c8= (and =c2:8=) as four eighths, =\repeat tremolo 4 { c16 e }= as c and e
+  in turn.
+- *Several scores in one file* (movements, or pieces of a set): the first
+  is practised; =-score N=, the list in the header (which gives the page
+  each begins on) or a click on a note of another picks another. A
+  =\score= without staves (a chord drawn in a markup) doesn't count.
+- *Hidden notes* (transparent, =\hideNotes=) sound but are always played for
+  you, as you can't read them.
+- *Transposing instruments* (a horn in F above the piano) sound at their
+  real pitch.
+- *Which staff is which hand*: a piano's own two staves (a =PianoStaff= or
+  =GrandStaff=) come first, so a singer's or a horn's staff above them is
+  played for you; then staves named for each hand (=right=, =lh=, =upper=,
+  =pianoDown=, =links=...); then the top two.
+
+* Modes
+- *Wait*: the music stops at each of your notes until you play them, then
+  the other hand comes in.
+- *Play*: the music keeps time, as with a real accompanist, and scores your
+  notes: /Perfect/ within 50 ms, /Good/ within 300 ms, /Missed/ if not
+  played in time, /Wrong/ for a key that wasn't due. Turn on the *guide* to
+  hear your part quietly while you learn it.
+- *Listen*: the program plays the music: both hands, or only the right or
+  the left, to hear one part alone (staves that are neither hand's always
+  play). =-mode listen= starts with both hands.
+
+Choose which hand you play (right, left or both), the tempo, a *loop* of
+bars, the metronome and a count-in (0–4 bars, in the settings; the cursor
+waits at the start while it counts down, and keys you try meanwhile don't
+count). The metronome and count-in can
+sound as a wood block, a metronome (bell and click), claves, side stick,
+cowbell, hi-hat, triangle, hand clap or sticks, at 10–140% volume: in the
+settings, or right-click the Metronome button. You hear the new sound at
+once. A hand is greyed out when the
+score has none of its notes on your keyboard (in listen mode, none at
+all), as Left and Both are for a piece on one staff. The stats (accuracy, streak, perfect / good / missed /
+wrong) are in the header; missed notes stay red on the score until the
+next pass.
+
+*Looping*: drag across bars on the timeline or on the score to loop them;
+drag the loop's edges on the timeline to change it. The looped bars are
+shaded on the score. The Loop button (F6) turns it on and off.
+
+*Pedals*: one sustain pedal counts at a time, and like a piano's it holds
+every note, yours and the music's. In listen mode it is the score's: its
+pedal markings (=\sustainOn= / =\sustainOff=, and sostenuto and una corda)
+are played with the music. In wait and play mode it is yours — a MIDI
+keyboard's, or *Shift* on the computer keyboard — and you follow the
+score's. The Pedal light in the transport bar shows when yours is down;
+below it, for a score that marks the sustain pedal, the Score light shows
+when the score's is. The one that doesn't count is dimmed. To have the
+score pedal in wait and play mode too, click the Score light, or turn on
+Settings → Play pedal marks (it stays on next time); click the Pedal
+light to pedal yourself again. A MIDI keyboard connected straight to the
+instrument reaches it whatever lilypractice does, so there your pedal
+still sounds while the score's counts; Shift, or a keyboard passed on
+with =-thru=, doesn't.
+
+*Your keyboard*: in the settings, choose its size (88, 76, 61, 49, 37 or 25
+keys), or press /Detect/ and then its lowest and highest key. The piano
+shows those keys, and in wait and play mode, notes outside them are played
+for you. The size, the computer keys' octave, the count-in, and the view
+settings are kept in =$XDG_CONFIG_HOME/lilypractice/prefs.json=
+(=~/.config/lilypractice/prefs.json= if =XDG_CONFIG_HOME= isn't set).
+
+* The window
+The header (a button for the list of scores, title, stats, keys,
+settings); on the left the list of scores; then, top to bottom, the score
+with its scroll bars, a piano, a timeline of the bars, and the transport
+bar (restart, play, bar, pedal, chord, mode, hands, tempo, loop,
+metronome).
+
+- Notes are coloured by hand, on the score and the piano: blue for the
+  right hand, orange for the left, violet for any other staff; green is
+  what you just played, red what you missed. The cursor flashes red on a
+  wrong key. A note tied on from another (joined to it by a curve) isn't
+  played again but held; it lights up as the music reaches it.
+- The piano has a real piano's proportions: its height sets the key size,
+  and it is centred (drag the line above it to resize it). It is drawn in
+  perspective, as Pianoteq draws its own, and its keys move: the keys you
+  hold and the notes the music plays go down, and spring back up when let
+  go; a key the music strikes again comes up a moment before, so that
+  each strike shows. The transport bar names the chord of the keys down
+  and of the notes the sustain pedal holds (yours or the score's,
+  whichever counts), both hands' together, as Pianoteq does: C, Am7,
+  Fdim, or G7/B when the lowest note isn't the root. A dot marks the key
+  to play. When that note is beyond the computer keys, a ring marks the
+  same note on them, as any octave counts; the rings stop once you play a
+  MIDI keyboard.
+- The view follows the music smoothly, pausing for a few seconds after you
+  scroll. In the settings: one page or two side by side (F8), the cursor's
+  style (a column over the staves, a line, the bar, or only the notes) and
+  colour, the piano's height, the zoom, and the text size (of the list of
+  scores, the panels, menus and buttons, and the timeline; the piano's
+  letters grow with its height).
+
+The mouse:
+
+| Where       | Does                                                          |
+|-------------+---------------------------------------------------------------|
+| score       | click a note: start there; double-click: play from there      |
+|             | (a note of another score in the file: practise that one)      |
+|             | right-click: play from here, start here, loop this bar / up   |
+|             | to here / four bars, loop off, fit to width, one or two pages |
+|             | drag over bars: loop them; shift-click: loop to that bar      |
+|             | drag empty space, or middle-drag anywhere: move the view      |
+|             | Ctrl+wheel: zoom around the pointer; Shift+wheel: sideways    |
+| timeline    | click: start at that bar; double-click: play from it          |
+|             | drag: loop bars; drag the loop's edges: change it             |
+|             | right-click: the same menu as the score                       |
+| piano       | click or drag over keys: play them (louder towards the front) |
+|             | right-click a key: computer keys from its octave; your        |
+|             | keyboard starts or ends there; all 88 keys                    |
+| transport   | wheel over the tempo: faster / slower; over the bar: move bars |
+|             | right-click Metronome: its sound, louder, softer              |
+| scores      | click a score: practise it (again, if changed since)          |
+| anywhere    | the mouse's back / forward buttons: back / forward a bar      |
+
+Hovering over the score marks, faintly, the note a click would pick, with
+its bar number. A click on a line of music picks the note nearest across,
+whichever staff it is on.
+
+*On its side*: =-rotate left= (anticlockwise) or =-rotate right= turns the
+whole window a quarter turn, for a screen held on its side: a tablet
+showing this computer's screen through Sunshine and Moonlight, say, which
+then has the score on its tall side. Menus, panels and tooltips turn with
+it; the folder dialog doesn't. The window must then be about 1150 pixels
+tall (1030 with the list of scores hidden) at the usual text size.
+
+| Key            | Does                                             |
+|----------------+--------------------------------------------------|
+| Space          | play / stop                                      |
+| Home           | back to the start (of the loop), stats reset     |
+| Ctrl+← →       | back / forward a bar                             |
+| ← →            | back / forward a note                            |
+| F2             | mode: wait → play → listen                       |
+| Ctrl+1 2 3     | wait, play, listen                               |
+| Tab            | hands: right → left → both                       |
+| Ctrl+R L B     | right, left, both hands                          |
+| ↑ ↓            | tempo ±5%                                        |
+| F3             | metronome                                        |
+| F4             | computer keys: any octave / exact octave         |
+| F5             | count-in                                         |
+| F6             | loop (four bars from here, the first time)       |
+| F7             | guide                                            |
+| F8             | one page or two side by side                     |
+| PgUp PgDn      | computer keys an octave up / down                |
+| Esc, Ctrl+G    | close a panel; Esc also stops                    |
+| Shift (hold)   | sustain pedal                                    |
+| Ctrl + − 0     | zoom                                             |
+| F9             | list of scores                                   |
+| Ctrl+O         | open another folder                              |
+| Ctrl+Q         | quit                                             |
+
+* Playing
+- *Computer keyboard*: two rows like a piano, by key position, so any layout
+  works.
+  #+begin_example
+   s d   g h j   l ;          2 3   5 6 7   9 0   =
+  z x c v b n m , . /        q w e r t y u i o p [ ]
+  #+end_example
+  The bottom row starts at C3 and the top row an octave higher; PgUp/PgDn
+  move both by an octave. By default a computer key counts in any octave
+  (F4 switches to exact octaves), since two rows cannot reach the whole
+  piano.
+- *MIDI keyboard*: connect it to =lilypractice:keyboard-in=, in qpwgraph or
+  with =-in "SL88"=. =-channel N= listens to one MIDI channel only.
+- *Simulated keyboard*: =out/bin/lpsim piece.ly= plays the right hand into
+  =lilypractice:0= at the written tempo; =-hand=, =-tempo=, =-wrong 0.1= (some
+  mistakes), =-delay=, =-to CLIENT:0=. Or play any MIDI file into it:
+  =aplaymidi -p lilypractice:0 file.mid=.
+
+* MIDI command keys
+A MIDI keyboard can run commands (play, back a bar, faster...) without
+giving up any keys, as Emacs does with its key sequences: hold A0 and A♯0
+together (keys you never play together) and command mode is on; then C4
+plays or stops. lilypractice writes this default to
+=~/.config/lilypractice/commands.json=:
+
+| Keys           | Does              | Keys      | Does               |
+|----------------+-------------------+-----------+--------------------|
+| A0+A#0 A3      | back to the start | A0+A#0 F4 | tempo −5% ↻        |
+| A0+A#0 B3      | back a bar ↻      | A0+A#0 G4 | tempo +5% ↻        |
+| A0+A#0 C4      | play / stop       | A0+A#0 A4 | metronome on / off |
+| A0+A#0 D4      | forward a bar ↻   | A0+A#0 B4 | next hand ↻        |
+| A0+A#0 E4      | loop on / off     | A0+A#0 C5 | next mode ↻        |
+| A0+A#0 Sustain | play / stop       |           |                    |
+
+#+begin_src json
+{
+  "Keys": {
+    "A0+A#0 C4": "play-stop",
+    "A0+A#0 Sustain": "play-stop",
+    ...
+  },
+  "Stay": ["bar-back", "bar-forward", "note-back", "note-forward",
+           "slower", "faster", "next-hand", "next-mode"]
+}
+#+end_src
+
+- Each entry is a sequence of steps separated by spaces. A step is a key
+  (=A0=, =C#1= or =C♯1=, =Bb0= or =B♭0=, or a MIDI note number), a pedal
+  (=Sustain=, =Sostenuto=, =Soft=), or several held together, joined by
+  =+=. Sequences can be longer than two steps, and start differently:
+  =Sustain+C8 C4= is the sustain pedal held with C8, then C4.
+- The first step is music until it is complete: A0 sounds and, while the
+  music plays, counts as a wrong note; when A♯0 joins it, lilypractice
+  takes that back. Notes held in the other hand don't get in the way.
+- In command mode, the keys are commands and never music. A panel over
+  the score lists what they do, and the piano on screen marks them. A
+  command ends command mode, except those in =Stay= (marked ↻): press
+  their key again to run them again. The first step again ends it too,
+  and so does any key that does nothing.
+- Keys held together act when the last of them goes down. A key that is
+  also part of keys held together acts when you let it go, so that
+  holding it for them doesn't also run it; other keys act when they go
+  down. A pedal held down counts as a key held: =Sustain+D4= needs it.
+- Edit the file while lilypractice runs: it reads it again at once. The
+  keys panel (keyboard icon in the header) lists the keys and any problem
+  with the file; an unknown field (such as =Channel=, from the old
+  format) is a problem.
+- Commands: =play-stop=, =start=, =bar-back=, =bar-forward=, =note-back=,
+  =note-forward=, =slower=, =faster=, =metronome=, =count-in=, =loop=,
+  =guide=, =next-mode=, =wait-mode=, =play-mode=, =listen-mode=,
+  =next-hand=, =right-hand=, =left-hand=, =both-hands=, =pages=.
+
+*With midi-keys and xremap* (MIDI → uinput → xremap): a zone of keys
+for xremap reaches lilypractice twice. Its notes come as music: start
+lilypractice with =-channel 1= (the channel you play on) to ignore them.
+And the computer keys xremap makes of them work as lilypractice's own
+shortcuts (B0 pressing Up: faster); to keep them out, add this to each
+=midi-keys= entry in =xremap.yaml= (the window class is =lilypractice=):
+#+begin_src yaml
+    application:
+      not: [lilypractice]
+#+end_src
+Or the other way round: set =Keys= to ={}= and let xremap send
+lilypractice's computer keys (above); every command has one.
+
+* Sound
+lilypractice is an ALSA client (named =lilypractice=, or =-name NAME= to
+run several) with four ports, which also show in qpwgraph:
+
+| Port | Name        | What                                                      |
+|------+-------------+-----------------------------------------------------------|
+|    0 | keyboard-in | your MIDI keyboard                                        |
+|    1 | score-out   | notes and pedals it plays from the score; channel = staff |
+|    2 | click-out   | metronome and count-in (channel 10, wood blocks)          |
+|    3 | keys-out    | notes from the computer keyboard, so you hear them        |
+
+- =-synth auto= (default) starts FluidSynth with the FluidR3 soundfont and
+  connects ports 1–3 to it. It stops when lilypractice stops. =-audio= picks
+  FluidSynth's audio driver (=pipewire=, =jack=, =alsa=).
+- =-synth CLIENT= connects ports 1 and 3 to another ALSA client instead,
+  given by name (the start of it will do) or as =client:port=.
+- =-synth none= leaves ports 1 and 3 for you to wire, e.g. to Carla, Ardour
+  or SuperCollider.
+
+The metronome and count-in (port 2) always sound on FluidSynth, started
+for them whatever =-synth= says: another instrument would play the wood
+blocks as its own notes, a piano as piano notes.
+
+To see the ALSA clients and their ports: =cat /proc/asound/seq/clients=,
+or =aconnect -l= (in =alsa-utils=).
+
+A MIDI keyboard should go straight to the instrument too, not through
+lilypractice, for the lowest latency; =-thru= passes keyboard-in on to
+keys-out for setups where it can't.
+
+** Pianoteq
+Pianoteq 9 has no port that other programs can connect to (its one port,
+=announcements=, only hears of clients coming and going), so
+=-synth Pianoteq= fails with "Operation not permitted". Pianoteq connects
+to the inputs you tick instead:
+1. Start lilypractice with =-synth none=.
+2. In Pianoteq's MIDI settings (Options → Devices), tick lilypractice's
+   score-out and keys-out, and your MIDI keyboard. Leave click-out: it is
+   on FluidSynth already.
+
+* Other commands
+- =out/bin/lpcheck piece.ly...= :: compile and check that the SVG note
+  heads, the JSON note list and LilyPond's own MIDI output agree.
+- =out/bin/lprender -o page.png piece.ly 0 5= :: write a page as PNG with
+  the notes of onsets 0 and 5 coloured.
+
+* Tests
+#+begin_src sh
+guix shell -m manifest.scm -- go test ./...
+test/e2e.sh      # the real program on a virtual display, without sound
+test/corpus.sh   # 22 real scores from Mutopia (about 2 minutes)
+#+end_src
+The engine's tests engrave their pieces in =testdata= with LilyPond (kept in
+the temporary folder until they change). The end-to-end tests use their own
+ALSA client name, so a lilypractice you have open is not disturbed.
+
+*Corpus*: 100 keyboard pieces from Mutopia (at most three per composer,
+picked at random with a fixed seed) were tried, and the 22 kept in
+=testdata/mutopia= are those that each test something the others don't:
+an old LilyPond version, a repeat, tremolo or grace-note form, a pedal,
+several scores in a file, MIDI written apart from the printed music, a
+singer's or horn's staff, the staves' names... (=index.tsv= lists their
+titles, composers, licences and sources). =test/corpus.sh= runs =lpcheck=
+on all of them: each must compile, its notes must match its note heads
+and LilyPond's own MIDI (as written, or with repeats and tremolos played
+out), Listen mode must play every note
+in order, a perfect player in Wait mode must get through without a
+wrong or missed note, and every note head must be on a line of music with
+staves (which the cursor spans). 18 pass; =testdata/mutopia/known.tsv= says
+why each of the other 4 doesn't (MIDI parts written differently from the
+printed music).
+Anything else is reported as NEW.
+
+* How it works
+=lilypond/lilypractice.ly= is loaded into LilyPond with
+=-dinclude-settings=, so scores need no changes. It gives each note head an
+SVG id and writes =piece.notes.json= with every note's time, length, pitch,
+staff, voice and tremolo, plus ties, bars, tempos, time signatures, pedals
+and repeats. The program plays from that JSON and finds each note in the
+picture by its id.
+
+| Directory   | What it holds                                            |
+|-------------+----------------------------------------------------------|
+| =lilypond/= | the LilyPond plugin, and the code that runs LilyPond     |
+| =score/=    | reads the JSON note list; repeats, tremolos              |
+| =practice/= | the practice engine: timing, modes, scoring, loop        |
+| =midikeys/= | MIDI keys and pedals as commands: sequences of steps     |
+| =alsa/=     | small ALSA sequencer binding                             |
+| =synth/=    | starts FluidSynth                                        |
+| =rsvg/=     | small librsvg binding: draw, find and recolour notes     |
+| =turn/=     | shows a widget turned a quarter turn (=-rotate=)         |
+| =view/=     | draws the stacked pages with coloured notes              |
+| =cmd/=      | lilypractice and the helper commands                     |
+| =test/=     | end-to-end tests                                         |
+| =testdata/= | test pieces                                              |
+
+* Licence
+lilypractice is free software: you can redistribute it and/or modify it
+under the terms of version 3 of the GNU General Public License, as
+published by the Free Software Foundation. See =LICENSE=.
+
+The GPL doesn't cover the scores from the Mutopia Project:
+=testdata/bach-invention-01.ly=, =testdata/fur-elise.ly= and those in
+=testdata/mutopia/= keep their own licences (public domain or Creative
+Commons), given in each score's header and in =testdata/mutopia/index.tsv=.
+The other test pieces in =testdata/= are part of lilypractice.
